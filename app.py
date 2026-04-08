@@ -226,4 +226,4 @@ m3.metric('Mean distance', f"{md:,.0f} bp" if pd.notna(md) else 'NA')
 ms = fdf['interaction_strength_proxy'].mean()
 m4.metric('Mean strength', f"{ms:.2f}" if pd.notna(ms) else 'NA')
 
-st.markdown('<div class="note"><b>Fix note:</b> This version is lighter and faster. It uses caching, fewer heavy visuals on first load, and a scatter-point limit to avoid blank screens and slow 
+st.markdown('<div class="note"><b>Fix note:</b> This version is lighter and faster. It uses caching, fewer heavy visuals on first load, and a scatter-point limit to avoid blank screens and slow rendering with large files.</div>', unsafe_allow_html=True)
