@@ -2,110 +2,60 @@ import os
 import numpy as np
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
-st.set_page_config(
-    page_title='MOLM-1 Chromatin Intelligence Dashboard',
-    page_icon='🧬',
-    layout='wide',
-    initial_sidebar_state='expanded'
-)
+st.set_page_config(page_title='MOLM-1 Chromatin Dashboard', page_icon='🧬', layout='wide', initial_sidebar_state='expanded')
 
 st.markdown('''
 <style>
-:root {
-    --bg1:#f6f8ff;
-    --bg2:#fff6fb;
-    --txt:#1e293b;
-    --muted:#64748b;
-    --violet:#7c3aed;
-    --blue:#2563eb;
-    --pink:#ec4899;
-    --teal:#0891b2;
-    --green:#059669;
-    --orange:#ea580c;
-    --card:rgba(255,255,255,0.86);
-}
 .stApp {
-    background:
-        radial-gradient(circle at 0% 0%, rgba(124,58,237,0.12), transparent 28%),
-        radial-gradient(circle at 100% 0%, rgba(37,99,235,0.11), transparent 28%),
-        radial-gradient(circle at 100% 100%, rgba(236,72,153,0.10), transparent 26%),
-        linear-gradient(180deg, var(--bg1), var(--bg2));
+    background: linear-gradient(180deg, #f8f9ff 0%, #fff8fc 100%);
 }
-.block-container {max-width: 1480px; padding-top: 1rem; padding-bottom: 2rem;}
+.block-container {max-width: 1420px; padding-top: 1rem; padding-bottom: 2rem;}
 .hero {
-    background: linear-gradient(135deg, rgba(124,58,237,0.15), rgba(37,99,235,0.11), rgba(236,72,153,0.12));
-    border: 1px solid rgba(124,58,237,0.15);
-    border-radius: 28px;
-    padding: 1.35rem 1.45rem;
-    box-shadow: 0 16px 34px rgba(15,23,42,0.09);
+    background: linear-gradient(135deg, rgba(124,58,237,0.10), rgba(37,99,235,0.08), rgba(236,72,153,0.08));
+    border: 1px solid rgba(124,58,237,0.10);
+    border-radius: 22px;
+    padding: 1.2rem 1.3rem;
     margin-bottom: 1rem;
 }
-.hero h1 {margin: 0; color: var(--txt); font-size: 2.35rem; font-weight: 850;}
-.hero p {margin: 0.45rem 0 0 0; color: var(--muted); font-size: 1rem;}
-.info-card {
-    background: var(--card);
-    backdrop-filter: blur(10px);
-    border-radius: 22px;
-    border: 1px solid rgba(255,255,255,0.8);
-    box-shadow: 0 12px 28px rgba(15,23,42,0.07);
-    padding: 1rem;
-}
-.soft-note {
-    background: linear-gradient(135deg, #edf6ff, #f8efff);
-    border-left: 5px solid var(--violet);
-    border-radius: 16px;
-    padding: 0.95rem 1rem;
-    color: #334155;
-    margin: 0.7rem 0 1rem 0;
-}
-.minihead {font-size: 1.16rem; font-weight: 800; color: var(--txt); margin-bottom: 0.45rem;}
-.smalltext {color: var(--muted); font-size: 0.94rem;}
-[data-testid="stMetric"] {
-    background: linear-gradient(135deg, rgba(255,255,255,0.97), rgba(247,249,255,0.96));
-    border: 1px solid rgba(99,102,241,0.11);
-    border-radius: 18px;
-    padding: 0.85rem 0.95rem;
-    box-shadow: 0 8px 22px rgba(15,23,42,0.06);
-}
-[data-testid="stMetricLabel"] {font-weight: 700;}
-[data-testid="stTabs"] button[role="tab"] {
-    border-radius: 999px;
-    padding: 0.42rem 1rem;
-}
+.hero-title {font-size: 2rem; font-weight: 800; color:#1e293b;}
+.hero-sub {font-size: 1rem; color:#64748b; margin-top:0.35rem;}
+.note {background:#f5f3ff; border-left:5px solid #7c3aed; padding:0.9rem 1rem; border-radius:14px; margin:0.75rem 0 1rem 0; color:#334155;}
+.card {background:#ffffff; border:1px solid rgba(148,163,184,0.18); border-radius:18px; padding:1rem; box-shadow:0 6px 20px rgba(15,23,42,0.05);}
+[data-testid="stMetric"] {background:#fff; border:1px solid rgba(148,163,184,0.18); border-radius:16px; padding:0.8rem;}
 </style>
 ''', unsafe_allow_html=True)
 
-
-def load_interaction_file(uploaded_file):
-    ext = os.path.splitext(uploaded_file.name)[1].lower()
+@st.cache_data(show_spinner=False)
+def load_interaction_file(file_bytes, name):
+    ext = os.path.splitext(name)[1].lower()
+    from io import BytesIO
+    bio = BytesIO(file_bytes)
     if ext == '.csv':
-        df = pd.read_csv(uploaded_file)
+        df = pd.read_csv(bio)
     elif ext in ['.xlsx', '.xls']:
-        df = pd.read_excel(uploaded_file)
+        df = pd.read_excel(bio)
     else:
-        raise ValueError('Upload CSV, XLSX, or XLS only.')
+        raise ValueError('Unsupported format. Use CSV or Excel.')
     df = df.loc[:, ~df.columns.astype(str).str.contains('^Unnamed')]
     if '' in df.columns:
         df = df.drop(columns=[''])
     return df
 
 
-def clean_chr(val):
-    if pd.isna(val):
+def clean_chr(x):
+    if pd.isna(x):
         return np.nan
-    val = str(val).strip().lower().replace('chromosome', '').replace('chr', '').strip()
-    return f'chr{val}' if val else np.nan
+    x = str(x).strip().lower().replace('chromosome', '').replace('chr', '').strip()
+    return 'chr' + x if x else np.nan
 
 
-def clean_strand(val):
-    if pd.isna(val):
+def clean_strand(x):
+    if pd.isna(x):
         return 'unknown'
-    val = str(val).strip().lower()
-    mapping = {'+': '+', 'plus': '+', '+1': '+', '1': '+', '-': '-', '-1': '-', 'minus': '-'}
-    return mapping.get(val, val)
+    x = str(x).strip().lower()
+    return {'1': '+', '+1': '+', '+': '+', 'plus': '+', '-1': '-', '-': '-', 'minus': '-'}.get(x, x)
 
 
 def get_condition(row):
@@ -123,45 +73,34 @@ def get_condition(row):
     return '+'.join(labels)
 
 
-def distance_bucket(distance):
-    if pd.isna(distance):
+def distance_class(x):
+    if pd.isna(x):
         return 'trans_or_unknown'
-    if distance <= 100000:
+    if x <= 100000:
         return 'short_range'
-    if distance <= 1000000:
+    if x <= 1000000:
         return 'medium_range'
     return 'long_range'
 
 
-def shape_bucket(row):
+def shape_class(row):
     d = row.get('genomic_distance_final', np.nan)
-    width = row.get('interactor_width', np.nan)
-    span = row.get('anchor_span', np.nan)
+    w = row.get('interactor_width', np.nan)
+    s = row.get('anchor_span', np.nan)
     if pd.isna(d):
         return 'trans_shape'
-    if d <= 100000 and pd.notna(width) and width <= 2000:
+    if d <= 100000 and pd.notna(w) and w <= 2000:
         return 'compact_loop'
-    if d <= 1000000 and pd.notna(span) and span <= 1000000:
+    if d <= 1000000 and pd.notna(s) and s <= 1000000:
         return 'local_arc'
-    if d > 1000000 and pd.notna(span) and span > 1000000:
+    if d > 1000000 and pd.notna(s) and s > 1000000:
         return 'extended_loop'
     return 'broad_contact'
 
-
+@st.cache_data(show_spinner=False)
 def process_data(df):
     df = df.copy()
-    text_cols = ['RefSeqName', 'TranscriptName', 'Feature_Chr', 'Interactor_Chr', 'InteractorName', 'InteractorID', 'Strand', 'IntGroup']
-    num_cols = [
-        'Feature_Start', 'Interactor_Start', 'Interactor_End', 'abs_distance', 'distance', 'NofInts',
-        'MG1_SuppPairs', 'MG2_SuppPairs', 'MC1_SuppPairs', 'MC2_SuppPairs', 'MN1_SuppPairs', 'MN2_SuppPairs',
-        'MG1_p_value', 'MG2_p_value', 'MC1_p_value', 'MC2_p_value', 'MN1_p_value', 'MN2_p_value',
-        'Normal', 'CarboplatinTreated', 'GemcitabineTreated'
-    ]
-
-    for col in text_cols:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.strip()
-    for col in num_cols:
+    for col in ['Feature_Start', 'Interactor_Start', 'Interactor_End', 'abs_distance', 'NofInts', 'MG1_SuppPairs', 'MG2_SuppPairs', 'MC1_SuppPairs', 'MC2_SuppPairs', 'MN1_SuppPairs', 'MN2_SuppPairs', 'Normal', 'CarboplatinTreated', 'GemcitabineTreated']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
@@ -169,7 +108,10 @@ def process_data(df):
         df['Feature_Chr'] = df['Feature_Chr'].apply(clean_chr)
     if 'Interactor_Chr' in df.columns:
         df['Interactor_Chr'] = df['Interactor_Chr'].apply(clean_chr)
-    df['Strand'] = df['Strand'].apply(clean_strand) if 'Strand' in df.columns else 'unknown'
+    if 'Strand' in df.columns:
+        df['Strand'] = df['Strand'].apply(clean_strand)
+    else:
+        df['Strand'] = 'unknown'
 
     if {'Interactor_Start', 'Interactor_End'}.issubset(df.columns):
         df['Interactor_Mid'] = ((df['Interactor_Start'] + df['Interactor_End']) / 2).round()
@@ -195,69 +137,93 @@ def process_data(df):
 
     df.loc[df['interaction_type'] == 'trans', 'genomic_distance_final'] = np.nan
     df['Condition'] = df.apply(get_condition, axis=1)
-    df['distance_class'] = df['genomic_distance_final'].apply(distance_bucket)
+    df['distance_class'] = df['genomic_distance_final'].apply(distance_class)
+    df['anchor_span'] = (df['Feature_Start'] - df['Interactor_Mid']).abs() if {'Feature_Start', 'Interactor_Mid'}.issubset(df.columns) else np.nan
 
     bins = [-1, 100000, 500000, 1000000, 5000000, 10000000, np.inf]
     labels = ['0-100kb', '100kb-500kb', '500kb-1Mb', '1Mb-5Mb', '5Mb-10Mb', '>10Mb']
     df['distance_bin'] = pd.cut(df['genomic_distance_final'], bins=bins, labels=labels)
 
-    for col in ['MG1_SuppPairs', 'MG2_SuppPairs', 'MC1_SuppPairs', 'MC2_SuppPairs', 'MN1_SuppPairs', 'MN2_SuppPairs']:
-        if col not in df.columns:
-            df[col] = 0
+    for c in ['MG1_SuppPairs', 'MG2_SuppPairs', 'MC1_SuppPairs', 'MC2_SuppPairs', 'MN1_SuppPairs', 'MN2_SuppPairs']:
+        if c not in df.columns:
+            df[c] = 0
 
-    df['Gem_Support'] = df['MG1_SuppPairs'] + df['MG2_SuppPairs']
-    df['Carbo_Support'] = df['MC1_SuppPairs'] + df['MC2_SuppPairs']
-    df['Normal_Support'] = df['MN1_SuppPairs'] + df['MN2_SuppPairs']
-
-    def select_support(row):
-        if row['Condition'] == 'Normal':
-            return row['Normal_Support']
-        if row['Condition'] == 'Carboplatin':
-            return row['Carbo_Support']
-        if row['Condition'] == 'Gemcitabine':
-            return row['Gem_Support']
-        return row.get('NofInts', np.nan)
-
-    df['interaction_strength_proxy'] = df.apply(select_support, axis=1)
+    df['interaction_strength_proxy'] = np.select(
+        [df['Condition'].eq('Normal'), df['Condition'].eq('Carboplatin'), df['Condition'].eq('Gemcitabine')],
+        [df['MN1_SuppPairs'] + df['MN2_SuppPairs'], df['MC1_SuppPairs'] + df['MC2_SuppPairs'], df['MG1_SuppPairs'] + df['MG2_SuppPairs']],
+        default=df['NofInts'] if 'NofInts' in df.columns else np.nan
+    )
     if 'NofInts' in df.columns:
-        df['interaction_strength_proxy'] = df['interaction_strength_proxy'].fillna(df['NofInts'])
+        df['interaction_strength_proxy'] = pd.Series(df['interaction_strength_proxy']).fillna(df['NofInts'])
 
-    def select_pvalue(row):
-        vals = []
-        if row['Condition'] == 'Normal':
-            vals = [row.get('MN1_p_value', np.nan), row.get('MN2_p_value', np.nan)]
-        elif row['Condition'] == 'Carboplatin':
-            vals = [row.get('MC1_p_value', np.nan), row.get('MC2_p_value', np.nan)]
-        elif row['Condition'] == 'Gemcitabine':
-            vals = [row.get('MG1_p_value', np.nan), row.get('MG2_p_value', np.nan)]
-        vals = [v for v in vals if pd.notna(v)]
-        return np.mean(vals) if vals else np.nan
-
-    df['active_p_value'] = df.apply(select_pvalue, axis=1)
     df['strand_group'] = df['Strand'].fillna('unknown')
-    df['anchor_span'] = (df['Feature_Start'] - df['Interactor_Mid']).abs() if {'Feature_Start', 'Interactor_Mid'}.issubset(df.columns) else np.nan
-    df['support_density'] = df['interaction_strength_proxy'] / df['interactor_width'].replace(0, np.nan)
-    df['distance_weighted_signal'] = df['interaction_strength_proxy'] / df['genomic_distance_final'].replace(0, np.nan)
-    df['strand_distance_score'] = df['genomic_distance_final'] / df['interaction_strength_proxy'].replace(0, np.nan)
+    df['shape_bucket'] = df.apply(shape_class, axis=1)
     df['shape_compactness'] = df['interactor_width'] / df['anchor_span'].replace(0, np.nan)
     df['shape_extension_ratio'] = df['anchor_span'] / df['interactor_width'].replace(0, np.nan)
     df['shape_contact_decay'] = df['interaction_strength_proxy'] / df['genomic_distance_final'].replace(0, np.nan)
-    df['shape_bucket'] = df.apply(shape_bucket, axis=1)
+    df['strand_distance_score'] = df['genomic_distance_final'] / df['interaction_strength_proxy'].replace(0, np.nan)
     df['log_distance'] = np.log10(df['genomic_distance_final'].replace(0, np.nan))
-    df['log_strength'] = np.log10(df['interaction_strength_proxy'].replace(0, np.nan))
     return df
 
-
-def build_tables(df):
+@st.cache_data(show_spinner=False)
+def summarize(df):
     condition_summary = df.groupby('Condition', dropna=False).agg(
         total_interactions=('Condition', 'size'),
         cis_interactions=('interaction_type', lambda x: (x == 'cis').sum()),
-        trans_interactions=('interaction_type', lambda x: (x == 'trans').sum()),
         mean_distance=('genomic_distance_final', 'mean'),
-        median_distance=('genomic_distance_final', 'median'),
-        mean_strength=('interaction_strength_proxy', 'mean'),
-        mean_p_value=('active_p_value', 'mean')
+        mean_strength=('interaction_strength_proxy', 'mean')
     ).reset_index()
+    distance_summary = df.groupby(['Condition', 'distance_bin'], dropna=False).agg(
+        interaction_count=('distance_bin', 'size'),
+        mean_strength=('interaction_strength_proxy', 'mean')
+    ).reset_index()
+    strand_summary = df.groupby(['Condition', 'strand_group'], dropna=False).agg(
+        interaction_count=('strand_group', 'size'),
+        mean_distance=('genomic_distance_final', 'mean')
+    ).reset_index()
+    shape_summary = df.groupby(['Condition', 'shape_bucket'], dropna=False).agg(
+        interaction_count=('shape_bucket', 'size'),
+        mean_extension_ratio=('shape_extension_ratio', 'mean'),
+        mean_decay=('shape_contact_decay', 'mean')
+    ).reset_index()
+    return condition_summary, distance_summary, strand_summary, shape_summary
 
-    distance_summary = df
+st.markdown('<div class="hero"><div class="hero-title">🧬 MOLM-1 Chromatin Dashboard</div><div class="hero-sub">Fast, simpler, and more stable version with algorithm-based distance analysis, drug comparison, strand analysis, and shape analysis.</div></div>', unsafe_allow_html=True)
 
+with st.sidebar:
+    st.header('Upload & Controls')
+    uploaded = st.file_uploader('Upload CSV / XLSX / XLS', type=['csv', 'xlsx', 'xls'])
+    page = st.radio('Select page', ['Overview', 'Detailed analysis'])
+    max_points = st.slider('Max scatter points', 1000, 20000, 5000, 1000)
+    show_raw = st.toggle('Show raw preview', False)
+
+if uploaded is None:
+    st.info('Upload your file to begin.')
+    st.stop()
+
+try:
+    file_bytes = uploaded.getvalue()
+    raw_df = load_interaction_file(file_bytes, uploaded.name)
+    df = process_data(raw_df)
+    condition_summary, distance_summary, strand_summary, shape_summary = summarize(df)
+except Exception as e:
+    st.error(f'Loading failed: {e}')
+    st.stop()
+
+conditions = sorted(df['Condition'].dropna().unique().tolist())
+selected_conditions = st.multiselect('Choose conditions', conditions, default=conditions)
+fdf = df[df['Condition'].isin(selected_conditions)].copy()
+condition_summary = condition_summary[condition_summary['Condition'].isin(selected_conditions)]
+distance_summary = distance_summary[distance_summary['Condition'].isin(selected_conditions)]
+strand_summary = strand_summary[strand_summary['Condition'].isin(selected_conditions)]
+shape_summary = shape_summary[shape_summary['Condition'].isin(selected_conditions)]
+
+m1, m2, m3, m4 = st.columns(4)
+m1.metric('Total interactions', f"{len(fdf):,}")
+m2.metric('Cis interactions', f"{(fdf['interaction_type'] == 'cis').sum():,}")
+md = fdf['genomic_distance_final'].mean()
+m3.metric('Mean distance', f"{md:,.0f} bp" if pd.notna(md) else 'NA')
+ms = fdf['interaction_strength_proxy'].mean()
+m4.metric('Mean strength', f"{ms:.2f}" if pd.notna(ms) else 'NA')
+
+st.markdown('<div class="note"><b>Fix note:</b> This version is lighter and faster. It uses caching, fewer heavy visuals on first load, and a scatter-point limit to avoid blank screens and slow 
