@@ -213,10 +213,10 @@ except Exception as e:
 
 # KPIs
 col1, col2, col3, col4 = st.columns(4)
-col1.metric('Total Interactions', f"{len(processed_df):,}")
-col2.metric('Cis Interactions', f"{(processed_df.interaction_type == \'cis\').sum():,}")
-col3.metric('Mean Distance', f"{processed_df.genomic_distance_final.mean():,.0f} bp")
-col4.metric('Mean Strength', f"{processed_df.interaction_strength_proxy.mean():.1f}")
+col1.metric("Total Interactions", f"{len(processed_df):,}")
+col2.metric("Cis Interactions", f"{(processed_df['interaction_type'] == 'cis').sum():,}")
+col3.metric("Mean Distance", f"{processed_df['genomic_distance_final'].mean():,.0f} bp")
+col4.metric("Mean Strength", f"{processed_df['interaction_strength_proxy'].mean():.1f}")
 
 conditions = sorted(processed_df['Condition'].dropna().unique())
 selected_conditions = st.multiselect('Filter conditions', conditions, default=conditions)
