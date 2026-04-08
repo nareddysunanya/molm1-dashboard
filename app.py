@@ -5,6 +5,231 @@ import plotly.express as px
 import plotly.graph_objects as go
 from io import BytesIO
 
+import pandas as pd
+import numpy as np
+import os
+
+# -----------------------------
+# 1. LOAD ANY FILE
+# -----------------------------
+def load_interaction_file(uploaded_file):
+    """
+    Accepts CSV, XLSX, XLS files.
+    Works with Streamlit uploaded files or normal file paths.
+    """
+    file_name = uploaded_file.name if hasattr(uploaded_file, "name") else str(uploaded_file)
+    ext = os.path.splitext(file_name)[1].lower()
+
+    if ext == ".csv":
+        df = pd.read_csv(uploaded_file)
+    elif ext in [".xlsx", ".xls"]:
+        df = pd.read_excel(uploaded_file)
+    else:
+        raise ValueError("Unsupported file format. Please upload CSV or Excel file.")
+    
+    df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
+    if "" in df.columns:
+        df = df.drop(columns=[""])
+
+    return df
+
+
+# -----------------------------
+# 2. CLEAN HELPER FUNCTIONS
+# -----------------------------
+def clean_chr(x):
+    if pd.isna(x):
+        return np.nan
+    x = str(x).strip().lower()
+    x = x.replace("chromosome", "").replace("chr", "").strip()
+    return "chr" + x
+
+def clean_strand(x):
+    if pd.isna(x):
+        return "unknown"
+    x = str(x).strip()
+    mapping = {
+        "1": "+",
+        "+1": "+",
+        "plus": "+",
+        "+": "+",
+        "-1": "-",
+        "minus": "-",
+        "-": "-"
+    }
+    return mapping.get(x.lower(), x)
+
+def get_condition(row):
+    labels = []
+    if row.get("Normal", 0) == 1:
+        labels.append("Normal")
+    if row.get("CarboplatinTreated", 0) == 1:
+        labels.append("Carboplatin")
+    if row.get("GemcitabineTreated", 0) == 1:
+        labels.append("Gemcitabine")
+
+    if len(labels) == 1:
+        return labels[0]
+    elif len(labels) > 1:
+        return "+".join(labels)
+    else:
+        return "Unlabeled"
+
+def classify_distance(x):
+    if pd.isna(x):
+        return "trans_or_unknown"
+    elif x <= 100000:
+        return "short_range"
+    elif x <= 1000000:
+        return "medium_range"
+    else:
+        return "long_range"
+
+
+# -----------------------------
+# 3. MAIN ALGORITHM
+# -----------------------------
+def process_molm1_data(df):
+    df = df.copy()
+
+    # Clean text columns
+    text_cols = ["Feature_Chr", "Interactor_Chr", "Strand"]
+    for col in text_cols:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+
+    # Convert numeric columns
+    num_cols = [
+        "Feature_Start", "Interactor_Start", "Interactor_End",
+        "distance", "abs_distance",
+        "MG1_SuppPairs", "MG2_SuppPairs",
+        "MC1_SuppPairs", "MC2_SuppPairs",
+        "MN1_SuppPairs", "MN2_SuppPairs",
+        "Normal", "CarboplatinTreated", "GemcitabineTreated", "NofInts"
+    ]
+
+    for col in num_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Standardize chromosome names
+    if "Feature_Chr" in df.columns:
+        df["Feature_Chr"] = df["Feature_Chr"].apply(clean_chr)
+    if "Interactor_Chr" in df.columns:
+        df["Interactor_Chr"] = df["Interactor_Chr"].apply(clean_chr)
+
+    # Standardize strand
+    if "Strand" in df.columns:
+        df["Strand"] = df["Strand"].apply(clean_strand)
+    else:
+        df["Strand"] = "unknown"
+
+    # Create midpoint of interactor region
+    if "Interactor_Start" in df.columns and "Interactor_End" in df.columns:
+        df["Interactor_Mid"] = ((df["Interactor_Start"] + df["Interactor_End"]) / 2).round()
+    else:
+        df["Interactor_Mid"] = np.nan
+
+    # Find cis / trans
+    if "Feature_Chr" in df.columns and "Interactor_Chr" in df.columns:
+        df["interaction_type"] = np.where(
+            df["Feature_Chr"] == df["Interactor_Chr"],
+            "cis",
+            "trans"
+        )
+    else:
+        df["interaction_type"] = "unknown"
+
+    # Compute distance
+    if "Feature_Start" in df.columns:
+        df["computed_distance"] = np.where(
+            df["interaction_type"] == "cis",
+            (df["Feature_Start"] - df["Interactor_Mid"]).abs(),
+            np.nan
+        )
+    else:
+        df["computed_distance"] = np.nan
+
+    # Final distance column
+    if "abs_distance" in df.columns:
+        df["genomic_distance_final"] = df["abs_distance"]
+        df["genomic_distance_final"] = df["genomic_distance_final"].fillna(df["computed_distance"])
+    else:
+        df["genomic_distance_final"] = df["computed_distance"]
+
+    df.loc[df["interaction_type"] == "trans", "genomic_distance_final"] = np.nan
+
+    # Distance bins
+    distance_bins = [-1, 100000, 500000, 1000000, 10000000, np.inf]
+    distance_labels = ["0-100kb", "100kb-500kb", "500kb-1Mb", "1Mb-10Mb", ">10Mb"]
+
+    df["distance_bin"] = pd.cut(
+        df["genomic_distance_final"],
+        bins=distance_bins,
+        labels=distance_labels
+    )
+
+    # Distance class
+    df["distance_class"] = df["genomic_distance_final"].apply(classify_distance)
+
+    # Condition label
+    df["Condition"] = df.apply(get_condition, axis=1)
+
+    # Support totals
+    df["Gem_Support"] = df[[c for c in ["MG1_SuppPairs", "MG2_SuppPairs"] if c in df.columns]].sum(axis=1, skipna=True)
+    df["Carbo_Support"] = df[[c for c in ["MC1_SuppPairs", "MC2_SuppPairs"] if c in df.columns]].sum(axis=1, skipna=True)
+    df["Normal_Support"] = df[[c for c in ["MN1_SuppPairs", "MN2_SuppPairs"] if c in df.columns]].sum(axis=1, skipna=True)
+
+    # Active support according to condition
+    def active_support(row):
+        if row["Condition"] == "Normal":
+            return row["Normal_Support"]
+        elif row["Condition"] == "Carboplatin":
+            return row["Carbo_Support"]
+        elif row["Condition"] == "Gemcitabine":
+            return row["Gem_Support"]
+        else:
+            return np.nan
+
+    df["Active_Support"] = df.apply(active_support, axis=1)
+
+    # Strand group
+    df["strand_group"] = df["Strand"].fillna("unknown")
+
+    return df
+
+
+# -----------------------------
+# 4. CREATE SUMMARIES
+# -----------------------------
+def create_analysis_tables(df):
+    distance_summary = df.groupby("Condition", dropna=False).agg(
+        total_interactions=("Condition", "size"),
+        cis_interactions=("interaction_type", lambda x: (x == "cis").sum()),
+        trans_interactions=("interaction_type", lambda x: (x == "trans").sum()),
+        mean_distance=("genomic_distance_final", "mean"),
+        median_distance=("genomic_distance_final", "median")
+    ).reset_index()
+
+    distance_bin_summary = df.groupby(["Condition", "distance_bin"], dropna=False).agg(
+        interaction_count=("distance_bin", "size"),
+        mean_active_support=("Active_Support", "mean")
+    ).reset_index()
+
+    strand_summary = df.groupby(["Condition", "strand_group"], dropna=False).agg(
+        interaction_count=("strand_group", "size"),
+        mean_distance=("genomic_distance_final", "mean"),
+        mean_active_support=("Active_Support", "mean")
+    ).reset_index()
+
+    shape_summary = df.groupby(["Condition", "distance_bin"], dropna=False).agg(
+        mean_support=("Active_Support", "mean"),
+        median_support=("Active_Support", "median"),
+        mean_distance=("genomic_distance_final", "mean")
+    ).reset_index()
+
+    return distance_summary, distance_bin_summary, strand_summary, shape_summary
+
 st.set_page_config(
     page_title="MOLM-1 Chromatin Explorer",
     page_icon="🧬",
