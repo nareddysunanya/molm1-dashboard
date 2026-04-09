@@ -6,7 +6,6 @@ import io
 import numpy as np
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
 
@@ -23,7 +22,7 @@ def load_interaction_file(file_bytes, name):
     elif ext in [".xlsx", ".xls"]:
         df = pd.read_excel(bio)
     else:
-        raise ValueError("Unsupported format. Please upload CSV or Excel file.")
+        raise ValueError("Unsupported format. Please upload CSV, XLS, or XLSX file.")
 
     df = df.loc[:, ~df.columns.astype(str).str.contains("^Unnamed")]
     if "" in df.columns:
@@ -35,7 +34,8 @@ def load_interaction_file(file_bytes, name):
 def clean_chr(x):
     if pd.isna(x):
         return np.nan
-    x = str(x).strip().lower().replace("chromosome", "").replace("chr", "").strip()
+    x = str(x).strip().lower()
+    x = x.replace("chromosome", "").replace("chr", "").strip()
     return "chr" + x if x else np.nan
 
 
@@ -74,11 +74,12 @@ def get_condition(row):
 def distance_class(x):
     if pd.isna(x):
         return "trans_or_unknown"
-    if x <= 100000:
+    elif x <= 100000:
         return "short_range"
-    if x <= 1000000:
+    elif x <= 1000000:
         return "medium_range"
-    return "long_range"
+    else:
+        return "long_range"
 
 
 def shape_class(row):
@@ -88,13 +89,14 @@ def shape_class(row):
 
     if pd.isna(d):
         return "trans_shape"
-    if d <= 100000 and pd.notna(w) and w <= 2000:
+    elif d <= 100000 and pd.notna(w) and w <= 2000:
         return "compact_loop"
-    if d <= 1000000 and pd.notna(s) and s <= 1000000:
+    elif d <= 1000000 and pd.notna(s) and s <= 1000000:
         return "local_arc"
-    if d > 1000000 and pd.notna(s) and s > 1000000:
+    elif d > 1000000 and pd.notna(s) and s > 1000000:
         return "extended_loop"
-    return "broad_contact"
+    else:
+        return "broad_contact"
 
 
 def dna_structure_class(row):
@@ -104,34 +106,41 @@ def dna_structure_class(row):
 
     if pd.isna(d):
         return "unknown_structure"
-    if d <= 100000 and pd.notna(compactness) and compactness < 0.08:
+    elif d <= 100000 and pd.notna(compactness) and compactness < 0.08:
         return "tight_fold"
-    if d <= 1000000 and pd.notna(ext_ratio) and ext_ratio <= 30:
+    elif d <= 1000000 and pd.notna(ext_ratio) and ext_ratio <= 30:
         return "arched_domain"
-    if d > 1000000:
+    elif d > 1000000:
         return "open_domain"
-    return "mixed_structure"
+    else:
+        return "mixed_structure"
 
 
 def interaction_summary_text(sub_df):
     if len(sub_df) == 0:
         return "No data available for this section."
 
-    mean_distance = sub_df["genomic_distance_final"].mean() if "genomic_distance_final" in sub_df.columns else np.nan
-    mean_strength = sub_df["interaction_strength_proxy"].mean() if "interaction_strength_proxy" in sub_df.columns else np.nan
-    cis_share = (sub_df["interaction_type"].eq("cis").mean() * 100) if "interaction_type" in sub_df.columns else np.nan
-    short_share = (sub_df["range_group"].eq("Short-Range").mean() * 100) if "range_group" in sub_df.columns else np.nan
+    parts = [f"Rows: {len(sub_df):,}"]
 
-    parts = []
-    parts.append(f"Rows: {len(sub_df):,}")
-    if pd.notna(mean_distance):
-        parts.append(f"Mean distance: {mean_distance:,.0f} bp")
-    if pd.notna(mean_strength):
-        parts.append(f"Mean strength: {mean_strength:.2f}")
-    if pd.notna(cis_share):
-        parts.append(f"Cis share: {cis_share:.1f}%")
-    if pd.notna(short_share):
-        parts.append(f"Short-range share: {short_share:.1f}%")
+    if "genomic_distance_final" in sub_df.columns:
+        mean_distance = sub_df["genomic_distance_final"].mean()
+        if pd.notna(mean_distance):
+            parts.append(f"Mean distance: {mean_distance:,.0f} bp")
+
+    if "interaction_strength_proxy" in sub_df.columns:
+        mean_strength = sub_df["interaction_strength_proxy"].mean()
+        if pd.notna(mean_strength):
+            parts.append(f"Mean strength: {mean_strength:.2f}")
+
+    if "interaction_type" in sub_df.columns:
+        cis_share = sub_df["interaction_type"].eq("cis").mean() * 100
+        if pd.notna(cis_share):
+            parts.append(f"Cis share: {cis_share:.1f}%")
+
+    if "range_group" in sub_df.columns:
+        short_share = sub_df["range_group"].eq("Short-Range").mean() * 100
+        if pd.notna(short_share):
+            parts.append(f"Short-range share: {short_share:.1f}%")
 
     return " | ".join(parts)
 
@@ -151,6 +160,7 @@ def process_data(df):
         "MG1_SuppPairs", "MG2_SuppPairs", "MC1_SuppPairs", "MC2_SuppPairs",
         "MN1_SuppPairs", "MN2_SuppPairs", "Normal", "CarboplatinTreated", "GemcitabineTreated"
     ]
+
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -251,260 +261,421 @@ def process_data(df):
 # MAIN CODE
 # =========================================================
 st.set_page_config(
-    page_title="MOLM-1 Neon Genome Dashboard",
+    page_title="MOLM-1 Chromatin Dashboard",
     page_icon="🧬",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+if "theme_mode" not in st.session_state:
+    st.session_state.theme_mode = "Dark"
 
-html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
-}
+with st.sidebar:
+    st.header("☰ Menu")
+    theme_mode = st.radio("Choose theme", ["Dark", "Light"], index=0 if st.session_state.theme_mode == "Dark" else 1)
+    st.session_state.theme_mode = theme_mode
 
-.stApp {
-    background:
-        radial-gradient(circle at 10% 20%, rgba(99,102,241,0.22), transparent 28%),
-        radial-gradient(circle at 85% 15%, rgba(236,72,153,0.18), transparent 24%),
-        radial-gradient(circle at 80% 80%, rgba(34,211,238,0.14), transparent 26%),
-        linear-gradient(135deg, #0f172a 0%, #111827 25%, #131c3a 55%, #1e1b4b 100%);
-    color: #e2e8f0;
-}
+    uploaded = st.file_uploader(
+        "Upload CSV / Excel file",
+        type=["csv", "xlsx", "xls"],
+        accept_multiple_files=False
+    )
+    max_points = st.slider("Scatter detail", 500, 12000, 3500, 500)
+    show_raw = st.toggle("Show raw preview", False)
 
-.block-container {
-    max-width: 1500px;
-    padding-top: 1rem;
-    padding-bottom: 2rem;
-}
+if st.session_state.theme_mode == "Dark":
+    bg_css = """
+    <style>
+    header[data-testid="stHeader"] {display: none;}
+    [data-testid="stToolbar"] {display: none;}
+    [data-testid="stDecoration"] {display: none;}
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
 
-.main-card {
-    background: rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-    border: 1px solid rgba(255,255,255,0.12);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
-    border-radius: 24px;
-    padding: 1.2rem 1.2rem;
-    margin-bottom: 1rem;
-}
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
-.hero {
-    background:
-        linear-gradient(135deg, rgba(124,58,237,0.45), rgba(59,130,246,0.28), rgba(236,72,153,0.30)),
-        rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.14);
-    box-shadow: 0 0 35px rgba(139,92,246,0.18);
-    border-radius: 28px;
-    padding: 1.6rem 1.6rem;
-    margin-bottom: 1rem;
-}
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
 
-.hero-badge {
-    display: inline-block;
-    padding: 0.32rem 0.75rem;
-    border-radius: 999px;
-    background: linear-gradient(90deg, #22d3ee, #8b5cf6, #f472b6);
-    color: white;
-    font-size: 0.78rem;
-    font-weight: 800;
-    margin-bottom: 0.8rem;
-    letter-spacing: 0.02em;
-}
+    .stApp {
+        background:
+            radial-gradient(circle at 10% 20%, rgba(99,102,241,0.22), transparent 28%),
+            radial-gradient(circle at 85% 15%, rgba(236,72,153,0.18), transparent 24%),
+            radial-gradient(circle at 80% 80%, rgba(34,211,238,0.14), transparent 26%),
+            linear-gradient(135deg, #0f172a 0%, #111827 25%, #131c3a 55%, #1e1b4b 100%);
+        color: #e2e8f0;
+    }
 
-.hero-title {
-    font-size: 2.6rem;
-    font-weight: 900;
-    line-height: 1.05;
-    color: #ffffff;
-    margin-bottom: 0.35rem;
-}
+    .block-container {
+        max-width: 1500px;
+        padding-top: 1rem;
+        padding-bottom: 2rem;
+    }
 
-.hero-sub {
-    font-size: 1.02rem;
-    color: #dbeafe;
-    max-width: 960px;
-}
+    .main-card {
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border: 1px solid rgba(255,255,255,0.12);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+        border-radius: 24px;
+        padding: 1.2rem 1.2rem;
+        margin-bottom: 1rem;
+    }
 
-.section-title {
-    font-size: 1.25rem;
-    font-weight: 900;
-    color: #ffffff;
-    margin-top: 0.35rem;
-    margin-bottom: 0.8rem;
-    letter-spacing: 0.01em;
-}
+    .hero {
+        background:
+            linear-gradient(135deg, rgba(124,58,237,0.45), rgba(59,130,246,0.28), rgba(236,72,153,0.30)),
+            rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.14);
+        box-shadow: 0 0 35px rgba(139,92,246,0.18);
+        border-radius: 28px;
+        padding: 1.6rem 1.6rem;
+        margin-bottom: 1rem;
+    }
 
-.glow-note {
-    background: linear-gradient(135deg, rgba(59,130,246,0.22), rgba(236,72,153,0.18));
-    border: 1px solid rgba(255,255,255,0.10);
-    border-left: 5px solid #22d3ee;
-    border-radius: 18px;
-    padding: 1rem 1rem;
-    color: #e2e8f0;
-    margin-bottom: 1rem;
-    box-shadow: 0 0 22px rgba(34,211,238,0.10);
-}
+    .hero-badge {
+        display: inline-block;
+        padding: 0.32rem 0.75rem;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #22d3ee, #8b5cf6, #f472b6);
+        color: white;
+        font-size: 0.78rem;
+        font-weight: 800;
+        margin-bottom: 0.8rem;
+        letter-spacing: 0.02em;
+    }
 
-.summary-glow {
-    background: linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.06));
-    border: 1px solid rgba(255,255,255,0.09);
-    border-radius: 16px;
-    padding: 0.9rem 1rem;
-    color: #dbeafe;
-    margin-top: 0.45rem;
-    margin-bottom: 1rem;
-    box-shadow: 0 0 18px rgba(168,85,247,0.08);
-}
+    .hero-title {
+        font-size: 2.6rem;
+        font-weight: 900;
+        line-height: 1.05;
+        color: #ffffff;
+        margin-bottom: 0.35rem;
+    }
 
-.metric-card {
-    background: linear-gradient(135deg, rgba(99,102,241,0.22), rgba(236,72,153,0.14));
-    border: 1px solid rgba(255,255,255,0.10);
-    border-radius: 22px;
-    padding: 1rem;
-    box-shadow: 0 0 24px rgba(99,102,241,0.15);
-    text-align: center;
-    margin-bottom: 0.8rem;
-}
+    .hero-sub {
+        font-size: 1.02rem;
+        color: #dbeafe;
+        max-width: 960px;
+    }
 
-.metric-emoji {
-    font-size: 1.5rem;
-    margin-bottom: 0.3rem;
-}
+    .section-title {
+        font-size: 1.25rem;
+        font-weight: 900;
+        color: #ffffff;
+        margin-top: 0.35rem;
+        margin-bottom: 0.8rem;
+    }
 
-.metric-label {
-    font-size: 0.92rem;
-    color: #cbd5e1;
-    margin-bottom: 0.15rem;
-}
+    .glow-note {
+        background: linear-gradient(135deg, rgba(59,130,246,0.22), rgba(236,72,153,0.18));
+        border: 1px solid rgba(255,255,255,0.10);
+        border-left: 5px solid #22d3ee;
+        border-radius: 18px;
+        padding: 1rem 1rem;
+        color: #e2e8f0;
+        margin-bottom: 1rem;
+    }
 
-.metric-value {
-    font-size: 1.55rem;
-    font-weight: 900;
-    color: #ffffff;
-}
+    .summary-glow {
+        background: linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.06));
+        border: 1px solid rgba(255,255,255,0.09);
+        border-radius: 16px;
+        padding: 0.9rem 1rem;
+        color: #dbeafe;
+        margin-top: 0.45rem;
+        margin-bottom: 1rem;
+    }
 
-.algorithm-step {
-    background: linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.05));
-    border: 1px solid rgba(255,255,255,0.09);
-    border-left: 4px solid #f472b6;
-    border-radius: 16px;
-    padding: 0.9rem 1rem;
-    margin-bottom: 0.7rem;
-    color: #e2e8f0;
-}
+    .metric-card {
+        background: linear-gradient(135deg, rgba(99,102,241,0.22), rgba(236,72,153,0.14));
+        border: 1px solid rgba(255,255,255,0.10);
+        border-radius: 22px;
+        padding: 1rem;
+        box-shadow: 0 0 24px rgba(99,102,241,0.15);
+        text-align: center;
+        margin-bottom: 0.8rem;
+    }
 
-.algorithm-step b {
-    color: #ffffff;
-}
+    .metric-emoji {
+        font-size: 1.5rem;
+        margin-bottom: 0.3rem;
+    }
 
-.chart-wrap {
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 22px;
-    padding: 0.9rem;
-    box-shadow: 0 6px 22px rgba(0,0,0,0.18);
-    margin-bottom: 1rem;
-}
+    .metric-label {
+        font-size: 0.92rem;
+        color: #cbd5e1;
+        margin-bottom: 0.15rem;
+    }
 
-.mini-tag {
-    display: inline-block;
-    padding: 0.28rem 0.7rem;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.08);
-    color: #c4b5fd;
-    border: 1px solid rgba(255,255,255,0.08);
-    font-size: 0.78rem;
-    font-weight: 700;
-    margin-bottom: 0.65rem;
-}
+    .metric-value {
+        font-size: 1.55rem;
+        font-weight: 900;
+        color: #ffffff;
+    }
 
-.dataframe-shell {
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 22px;
-    padding: 0.9rem;
-    margin-top: 0.6rem;
-}
+    .algorithm-step {
+        background: linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.05));
+        border: 1px solid rgba(255,255,255,0.09);
+        border-left: 4px solid #f472b6;
+        border-radius: 16px;
+        padding: 0.9rem 1rem;
+        margin-bottom: 0.7rem;
+        color: #e2e8f0;
+    }
 
-[data-testid="stSidebar"] {
-    background:
-        linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(30,41,59,0.96) 100%);
-    border-right: 1px solid rgba(255,255,255,0.06);
-}
+    .chart-wrap {
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 22px;
+        padding: 0.9rem;
+        margin-bottom: 1rem;
+    }
 
-[data-testid="stSidebar"] * {
-    color: #e5e7eb !important;
-}
+    .mini-tag {
+        display: inline-block;
+        padding: 0.28rem 0.7rem;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.08);
+        color: #c4b5fd;
+        border: 1px solid rgba(255,255,255,0.08);
+        font-size: 0.78rem;
+        font-weight: 700;
+        margin-bottom: 0.65rem;
+    }
 
-[data-testid="stMetric"] {
-    background: transparent;
-    border: none;
-    box-shadow: none;
-}
+    .dataframe-shell {
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 22px;
+        padding: 0.9rem;
+        margin-top: 0.6rem;
+    }
 
-h1, h2, h3, h4, h5, h6, p, label, div {
-    color: inherit;
-}
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(30,41,59,0.96) 100%);
+        border-right: 1px solid rgba(255,255,255,0.06);
+    }
 
-.stSelectbox label, .stMultiSelect label, .stSlider label, .stFileUploader label {
-    color: #e5e7eb !important;
-    font-weight: 700 !important;
-}
+    [data-testid="stSidebar"] * {
+        color: #e5e7eb !important;
+    }
 
-.stTabs [data-baseweb="tab-list"] {
-    gap: 8px;
-}
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
 
-.stTabs [data-baseweb="tab"] {
-    background: rgba(255,255,255,0.06);
-    border-radius: 14px;
-    color: #e2e8f0;
-    padding: 10px 16px;
-    border: 1px solid rgba(255,255,255,0.08);
-}
+    .stTabs [data-baseweb="tab"] {
+        background: rgba(255,255,255,0.06);
+        border-radius: 14px;
+        color: #e2e8f0;
+        padding: 10px 16px;
+        border: 1px solid rgba(255,255,255,0.08);
+    }
 
-.stTabs [aria-selected="true"] {
-    background: linear-gradient(90deg, rgba(99,102,241,0.35), rgba(236,72,153,0.28));
-    color: white !important;
-}
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(90deg, rgba(99,102,241,0.35), rgba(236,72,153,0.28));
+        color: white !important;
+    }
+    </style>
+    """
+else:
+    bg_css = """
+    <style>
+    header[data-testid="stHeader"] {display: none;}
+    [data-testid="stToolbar"] {display: none;}
+    [data-testid="stDecoration"] {display: none;}
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
 
-div[data-testid="stDataFrame"] {
-    border-radius: 16px;
-    overflow: hidden;
-}
-</style>
-""", unsafe_allow_html=True)
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+
+    .stApp {
+        background:
+            radial-gradient(circle at 12% 18%, rgba(59,130,246,0.12), transparent 26%),
+            radial-gradient(circle at 88% 14%, rgba(236,72,153,0.10), transparent 22%),
+            radial-gradient(circle at 82% 84%, rgba(34,197,94,0.08), transparent 24%),
+            linear-gradient(180deg, #f8fbff 0%, #fdf7ff 48%, #f8fcff 100%);
+        color: #1e293b;
+    }
+
+    .block-container {
+        max-width: 1500px;
+        padding-top: 1rem;
+        padding-bottom: 2rem;
+    }
+
+    .main-card {
+        background: rgba(255,255,255,0.82);
+        backdrop-filter: blur(16px);
+        border: 1px solid rgba(148,163,184,0.16);
+        box-shadow: 0 8px 28px rgba(15,23,42,0.08);
+        border-radius: 24px;
+        padding: 1.2rem 1.2rem;
+        margin-bottom: 1rem;
+    }
+
+    .hero {
+        background: linear-gradient(135deg, rgba(59,130,246,0.18), rgba(168,85,247,0.14), rgba(244,114,182,0.16));
+        border: 1px solid rgba(255,255,255,0.55);
+        box-shadow: 0 14px 34px rgba(99,102,241,0.12);
+        border-radius: 28px;
+        padding: 1.6rem 1.6rem;
+        margin-bottom: 1rem;
+    }
+
+    .hero-badge {
+        display: inline-block;
+        padding: 0.32rem 0.75rem;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #0ea5e9, #8b5cf6, #ec4899);
+        color: white;
+        font-size: 0.78rem;
+        font-weight: 800;
+        margin-bottom: 0.8rem;
+    }
+
+    .hero-title {
+        font-size: 2.6rem;
+        font-weight: 900;
+        line-height: 1.05;
+        color: #0f172a;
+        margin-bottom: 0.35rem;
+    }
+
+    .hero-sub {
+        font-size: 1.02rem;
+        color: #334155;
+        max-width: 960px;
+    }
+
+    .section-title {
+        font-size: 1.25rem;
+        font-weight: 900;
+        color: #0f172a;
+        margin-top: 0.35rem;
+        margin-bottom: 0.8rem;
+    }
+
+    .glow-note {
+        background: linear-gradient(135deg, #eef2ff, #fdf2f8);
+        border: 1px solid rgba(148,163,184,0.16);
+        border-left: 5px solid #3b82f6;
+        border-radius: 18px;
+        padding: 1rem 1rem;
+        color: #334155;
+        margin-bottom: 1rem;
+    }
+
+    .summary-glow {
+        background: linear-gradient(135deg, #ffffff, #f8fafc);
+        border: 1px solid rgba(148,163,184,0.16);
+        border-radius: 16px;
+        padding: 0.9rem 1rem;
+        color: #334155;
+        margin-top: 0.45rem;
+        margin-bottom: 1rem;
+    }
+
+    .metric-card {
+        background: linear-gradient(135deg, rgba(59,130,246,0.10), rgba(236,72,153,0.08));
+        border: 1px solid rgba(148,163,184,0.14);
+        border-radius: 22px;
+        padding: 1rem;
+        box-shadow: 0 8px 22px rgba(99,102,241,0.08);
+        text-align: center;
+        margin-bottom: 0.8rem;
+    }
+
+    .metric-emoji {
+        font-size: 1.5rem;
+        margin-bottom: 0.3rem;
+    }
+
+    .metric-label {
+        font-size: 0.92rem;
+        color: #475569;
+        margin-bottom: 0.15rem;
+    }
+
+    .metric-value {
+        font-size: 1.55rem;
+        font-weight: 900;
+        color: #0f172a;
+    }
+
+    .algorithm-step {
+        background: linear-gradient(135deg, #ffffff, #faf5ff);
+        border: 1px solid rgba(148,163,184,0.14);
+        border-left: 4px solid #ec4899;
+        border-radius: 16px;
+        padding: 0.9rem 1rem;
+        margin-bottom: 0.7rem;
+        color: #334155;
+    }
+
+    .chart-wrap {
+        background: rgba(255,255,255,0.88);
+        border: 1px solid rgba(148,163,184,0.14);
+        border-radius: 22px;
+        padding: 0.9rem;
+        margin-bottom: 1rem;
+    }
+
+    .mini-tag {
+        display: inline-block;
+        padding: 0.28rem 0.7rem;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #6d28d9;
+        border: 1px solid rgba(148,163,184,0.12);
+        font-size: 0.78rem;
+        font-weight: 700;
+        margin-bottom: 0.65rem;
+    }
+
+    .dataframe-shell {
+        background: rgba(255,255,255,0.88);
+        border: 1px solid rgba(148,163,184,0.14);
+        border-radius: 22px;
+        padding: 0.9rem;
+        margin-top: 0.6rem;
+    }
+
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        border-right: 1px solid rgba(148,163,184,0.16);
+    }
+    </style>
+    """
+
+st.markdown(bg_css, unsafe_allow_html=True)
 
 st.markdown("""
 <div class="hero">
-    <div class="hero-badge">NEXT-GENOME UI · VIBRANT MODE</div>
+    <div class="hero-badge">NEXT-GENOME UI · WOW MODE</div>
     <div class="hero-title">🧬 MOLM-1 Chromatin Intelligence Dashboard</div>
     <div class="hero-sub">
-        A distance-driven, visually rich genome interaction dashboard for MOLM-1 cells that compares
-        Normal, Carboplatin, and Gemcitabine conditions with strand analysis, shape analysis, DNA structure proxy views,
-        and chart-wise summaries in a beginner-friendly flow.
+        A one-page, visually rich dashboard for distance-dependent chromatin interaction analysis in MOLM-1 cells,
+        including drug comparison, strand analysis, shape visualization, DNA structure proxy analysis, and simple chart summaries.
     </div>
 </div>
 """, unsafe_allow_html=True)
-
-with st.sidebar:
-    st.header("Dashboard Controls")
-    uploaded = st.file_uploader("Upload CSV / XLSX / XLS", type=["csv", "xlsx", "xls"])
-    max_points = st.slider("Scatter detail", 500, 12000, 3500, 500)
-    show_raw = st.toggle("Show raw preview", False)
 
 if uploaded is None:
     st.markdown("""
     <div class="main-card">
         <div class="section-title">Start Here</div>
         <div class="glow-note">
-        Upload your project dataset to activate the full dashboard. This version is intentionally designed
-        to look more premium, colorful, and user-friendly while still following the abstract:
-        genomic distance computation, distance-dependent interaction strength analysis, treatment comparison,
-        short-range vs long-range interactions, strand analysis, shape visualizations, and DNA structure analysis.
+        Upload your project dataset as CSV, XLS, or XLSX. This dashboard is built around the abstract:
+        compute genomic distance, study distance-dependent interaction strength, compare drug conditions,
+        analyze short-range and long-range interactions, show strand analysis, and include DNA shape and structure views.
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -529,14 +700,13 @@ if len(fdf) == 0:
     st.warning("No data available after filtering.")
     st.stop()
 
-# METRIC CARDS
 mean_distance = fdf["genomic_distance_final"].mean()
 mean_strength = fdf["interaction_strength_proxy"].mean()
 cis_count = (fdf["interaction_type"] == "cis").sum()
 
-mc1, mc2, mc3, mc4 = st.columns(4)
+m1, m2, m3, m4 = st.columns(4)
 
-with mc1:
+with m1:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-emoji">🧩</div>
@@ -545,7 +715,7 @@ with mc1:
     </div>
     """, unsafe_allow_html=True)
 
-with mc2:
+with m2:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-emoji">🧬</div>
@@ -554,7 +724,7 @@ with mc2:
     </div>
     """, unsafe_allow_html=True)
 
-with mc3:
+with m3:
     md_text = f"{mean_distance:,.0f} bp" if pd.notna(mean_distance) else "NA"
     st.markdown(f"""
     <div class="metric-card">
@@ -564,7 +734,7 @@ with mc3:
     </div>
     """, unsafe_allow_html=True)
 
-with mc4:
+with m4:
     ms_text = f"{mean_strength:.2f}" if pd.notna(mean_strength) else "NA"
     st.markdown(f"""
     <div class="metric-card">
@@ -578,40 +748,45 @@ st.markdown("""
 <div class="main-card">
     <div class="section-title">Why this dashboard matters</div>
     <div class="glow-note">
-    This tool turns raw chromatin interaction rows into an easy visual story. Every major analysis here is rooted in
-    genomic distance, because your abstract specifically focuses on the relationship between distance and interaction strength
-    in MOLM-1 cells under Normal, Carboplatin, and Gemcitabine treatment conditions.
+    This tool is made to be clear for beginners and visually interesting at first look. Every major analysis is based on genomic distance,
+    because the abstract focuses on the relationship between distance and interaction strength in MOLM-1 cells after drug treatment.
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# ALGORITHM
 st.markdown('<div class="main-card"><div class="section-title">Algorithm Flow</div>', unsafe_allow_html=True)
+
 algo_steps = [
-    "Load the uploaded chromatin interaction dataset.",
-    "Clean chromosome names, strand values, and numeric fields.",
-    "Detect cis and trans interactions using chromosome matching.",
-    "Compute genomic distance for cis interactions from feature and interactor coordinates.",
-    "Estimate interaction strength from treatment-linked support pair columns.",
+    "Load chromatin interaction data from CSV or Excel.",
+    "Clean chromosome labels, strand values, and numeric columns.",
+    "Identify cis and trans interactions using chromosome matching.",
+    "Compute genomic distance for cis interactions from genomic coordinates.",
+    "Estimate interaction strength using treatment-linked support-pair columns.",
     "Build distance bins and classify short-range, medium-range, and long-range interactions.",
-    "Generate strand analysis by drug and distance.",
-    "Generate shape and DNA structure proxy features from anchor span, interactor width, compactness, and decay.",
-    "Display all results in a one-page, beginner-friendly, visually rich dashboard."
+    "Perform strand analysis based on drug condition and genomic distance.",
+    "Generate shape and DNA structure proxy features using anchor span, interactor width, compactness, and decay.",
+    "Display summaries under every visualization for easier understanding."
 ]
+
 for i, step in enumerate(algo_steps, start=1):
     st.markdown(
         f'<div class="algorithm-step"><b>Step {i}:</b> {step}</div>',
         unsafe_allow_html=True
     )
+
 st.markdown('</div>', unsafe_allow_html=True)
 
-# SECTION 1
-st.markdown('<div class="main-card"><div class="section-title">Distance-Dependent Interaction Analysis</div><div class="mini-tag">Abstract core analysis</div>', unsafe_allow_html=True)
+# DISTANCE ANALYSIS
+st.markdown('<div class="main-card"><div class="section-title">Distance-Dependent Interaction Analysis</div><div class="mini-tag">Core abstract analysis</div>', unsafe_allow_html=True)
 
 scatter_df = safe_sample(
     fdf.dropna(subset=["log_distance", "interaction_strength_proxy"]),
     max_points
 )
+
+plot_template = "plotly_dark" if st.session_state.theme_mode == "Dark" else "plotly_white"
+plot_bg = "rgba(0,0,0,0)" if st.session_state.theme_mode == "Dark" else "rgba(255,255,255,0)"
+font_color = "white" if st.session_state.theme_mode == "Dark" else "#0f172a"
 
 fig1 = px.scatter(
     scatter_df,
@@ -621,20 +796,15 @@ fig1 = px.scatter(
     title="Log Genomic Distance vs Interaction Strength",
     opacity=0.78,
     color_discrete_sequence=["#38bdf8", "#a855f7", "#fb7185"],
-    template="plotly_dark"
+    template=plot_template
 )
-fig1.update_layout(
-    height=470,
-    paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(255,255,255,0.02)",
-    font=dict(color="white"),
-    legend_title_text="Condition"
-)
+fig1.update_layout(height=470, paper_bgcolor=plot_bg, font=dict(color=font_color))
+
 st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
 st.plotly_chart(fig1, use_container_width=True)
 st.markdown('</div>', unsafe_allow_html=True)
 st.markdown(
-    f'<div class="summary-glow"><b>Summary:</b> {interaction_summary_text(scatter_df)}. This view directly shows how interaction strength changes with genomic distance under each treatment condition.</div>',
+    f'<div class="summary-glow"><b>Summary:</b> {interaction_summary_text(scatter_df)}. This chart directly shows how interaction strength changes with genomic distance under each treatment condition.</div>',
     unsafe_allow_html=True
 )
 
@@ -648,19 +818,14 @@ with c1:
         nbins=45,
         title="Distance Distribution Across Conditions",
         color_discrete_sequence=["#60a5fa", "#c084fc", "#fb7185"],
-        template="plotly_dark"
+        template=plot_template
     )
-    fig2.update_layout(
-        height=420,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(255,255,255,0.02)",
-        font=dict(color="white")
-    )
+    fig2.update_layout(height=420, paper_bgcolor=plot_bg, font=dict(color=font_color))
     st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
     st.plotly_chart(fig2, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> This distribution highlights whether certain treatment conditions are associated with more local contacts or more distant chromatin interactions.</div>',
+        '<div class="summary-glow"><b>Summary:</b> This distribution shows whether treatment conditions are associated with more local or more distant chromatin contacts.</div>',
         unsafe_allow_html=True
     )
 
@@ -672,20 +837,14 @@ with c2:
         color="Condition",
         title="Strength Distribution by Treatment",
         color_discrete_sequence=["#22d3ee", "#8b5cf6", "#f472b6"],
-        template="plotly_dark"
+        template=plot_template
     )
-    fig3.update_layout(
-        height=420,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(255,255,255,0.02)",
-        font=dict(color="white"),
-        showlegend=False
-    )
+    fig3.update_layout(height=420, paper_bgcolor=plot_bg, font=dict(color=font_color), showlegend=False)
     st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
     st.plotly_chart(fig3, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> This chart compares the spread of interaction strengths under Normal, Carboplatin, and Gemcitabine conditions.</div>',
+        '<div class="summary-glow"><b>Summary:</b> This chart compares the spread of interaction strengths between Normal, Carboplatin, and Gemcitabine groups.</div>',
         unsafe_allow_html=True
     )
 
@@ -701,25 +860,20 @@ if len(heat_df) > 0:
         color_continuous_scale="Plasma",
         aspect="auto",
         title="Mean Strength Across Distance Bins",
-        template="plotly_dark"
+        template=plot_template
     )
-    fig_heat.update_layout(
-        height=430,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(255,255,255,0.02)",
-        font=dict(color="white")
-    )
+    fig_heat.update_layout(height=430, paper_bgcolor=plot_bg, font=dict(color=font_color))
     st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
     st.plotly_chart(fig_heat, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> The heatmap makes distance-dependent strength differences easier to understand by grouping interactions into clear genomic distance ranges.</div>',
+        '<div class="summary-glow"><b>Summary:</b> This heatmap makes the distance-dependent strength pattern easier to read by grouping interactions into genomic distance bins.</div>',
         unsafe_allow_html=True
     )
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# SECTION 2
+# SHORT VS LONG
 st.markdown('<div class="main-card"><div class="section-title">Short-Range vs Long-Range Patterns</div><div class="mini-tag">Distance grouping by treatment</div>', unsafe_allow_html=True)
 
 range_stats = fdf.groupby(["Condition", "range_group"], dropna=False).agg(
@@ -738,19 +892,14 @@ with c3:
         barmode="group",
         title="Short-Range vs Long-Range Counts",
         color_discrete_sequence=["#38bdf8", "#fb7185"],
-        template="plotly_dark"
+        template=plot_template
     )
-    fig4.update_layout(
-        height=420,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(255,255,255,0.02)",
-        font=dict(color="white")
-    )
+    fig4.update_layout(height=420, paper_bgcolor=plot_bg, font=dict(color=font_color))
     st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
     st.plotly_chart(fig4, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> This chart reveals whether treatment shifts the interaction population toward shorter or longer genomic distances.</div>',
+        '<div class="summary-glow"><b>Summary:</b> This comparison reveals whether drug treatment shifts the interaction population toward shorter or longer genomic distances.</div>',
         unsafe_allow_html=True
     )
 
@@ -763,25 +912,20 @@ with c4:
         barmode="group",
         title="Strength in Short vs Long Range",
         color_discrete_sequence=["#22d3ee", "#f59e0b"],
-        template="plotly_dark"
+        template=plot_template
     )
-    fig5.update_layout(
-        height=420,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(255,255,255,0.02)",
-        font=dict(color="white")
-    )
+    fig5.update_layout(height=420, paper_bgcolor=plot_bg, font=dict(color=font_color))
     st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
     st.plotly_chart(fig5, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> This comparison helps show whether drug treatment changes not only the number of interactions, but also how strong short and long contacts are.</div>',
+        '<div class="summary-glow"><b>Summary:</b> This chart shows whether short-range and long-range interactions differ in average strength across treatment conditions.</div>',
         unsafe_allow_html=True
     )
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# SECTION 3
+# STRAND ANALYSIS
 st.markdown('<div class="main-card"><div class="section-title">Strand Analysis Based on Drug and Distance</div><div class="mini-tag">Requested strand analysis</div>', unsafe_allow_html=True)
 
 strand_view = fdf.groupby(["Condition", "strand_group"], dropna=False).agg(
@@ -801,19 +945,14 @@ with c5:
         barmode="group",
         title="Strand Distribution by Drug",
         color_discrete_sequence=px.colors.qualitative.Prism,
-        template="plotly_dark"
+        template=plot_template
     )
-    fig6.update_layout(
-        height=420,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(255,255,255,0.02)",
-        font=dict(color="white")
-    )
+    fig6.update_layout(height=420, paper_bgcolor=plot_bg, font=dict(color=font_color))
     st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
     st.plotly_chart(fig6, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> This shows how strand groups are distributed across Normal, Carboplatin, and Gemcitabine conditions.</div>',
+        '<div class="summary-glow"><b>Summary:</b> This chart shows how strand groups are distributed across Normal, Carboplatin, and Gemcitabine conditions.</div>',
         unsafe_allow_html=True
     )
 
@@ -831,25 +970,20 @@ with c6:
         title="Distance vs Strength by Strand and Drug",
         opacity=0.74,
         color_discrete_sequence=px.colors.qualitative.Bold,
-        template="plotly_dark"
+        template=plot_template
     )
-    fig7.update_layout(
-        height=420,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(255,255,255,0.02)",
-        font=dict(color="white")
-    )
+    fig7.update_layout(height=420, paper_bgcolor=plot_bg, font=dict(color=font_color))
     st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
     st.plotly_chart(fig7, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        f'<div class="summary-glow"><b>Summary:</b> {interaction_summary_text(strand_scatter)}. This chart combines drug, strand, distance, and interaction strength in a single visual.</div>',
+        f'<div class="summary-glow"><b>Summary:</b> {interaction_summary_text(strand_scatter)}. This chart combines drug condition, strand, distance, and interaction strength in one view.</div>',
         unsafe_allow_html=True
     )
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# SECTION 4
+# SHAPE ANALYSIS
 st.markdown('<div class="main-card"><div class="section-title">DNA Shape Visualizations</div><div class="mini-tag">Shape features from distance and geometry</div>', unsafe_allow_html=True)
 
 shape_view = fdf.groupby(["Condition", "shape_bucket"], dropna=False).agg(
@@ -869,19 +1003,14 @@ with c7:
         barmode="group",
         title="Shape Bucket by Condition",
         color_discrete_sequence=px.colors.qualitative.G10,
-        template="plotly_dark"
+        template=plot_template
     )
-    fig8.update_layout(
-        height=420,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(255,255,255,0.02)",
-        font=dict(color="white")
-    )
+    fig8.update_layout(height=420, paper_bgcolor=plot_bg, font=dict(color=font_color))
     st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
     st.plotly_chart(fig8, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> Shape buckets classify contacts into compact loops, local arcs, extended loops, and broad contacts using genomic distance and width-based rules.</div>',
+        '<div class="summary-glow"><b>Summary:</b> Shape buckets classify contacts into compact loops, local arcs, extended loops, and broad contacts using genomic distance and geometry rules.</div>',
         unsafe_allow_html=True
     )
 
@@ -899,25 +1028,20 @@ with c8:
         title="Anchor Span vs Interaction Strength",
         opacity=0.76,
         color_discrete_sequence=["#22d3ee", "#8b5cf6", "#fb7185"],
-        template="plotly_dark"
+        template=plot_template
     )
-    fig9.update_layout(
-        height=420,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(255,255,255,0.02)",
-        font=dict(color="white")
-    )
+    fig9.update_layout(height=420, paper_bgcolor=plot_bg, font=dict(color=font_color))
     st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
     st.plotly_chart(fig9, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        f'<div class="summary-glow"><b>Summary:</b> {interaction_summary_text(shape_scatter)}. Bubble size reflects interactor width, helping visualize geometry-related contact patterns.</div>',
+        f'<div class="summary-glow"><b>Summary:</b> {interaction_summary_text(shape_scatter)}. Bubble size represents interactor width and helps visualize geometric interaction patterns.</div>',
         unsafe_allow_html=True
     )
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# SECTION 5
+# DNA STRUCTURE
 st.markdown('<div class="main-card"><div class="section-title">DNA Structure Proxy Analysis</div><div class="mini-tag">Tight folds, arches, and open domains</div>', unsafe_allow_html=True)
 
 dna_view = fdf.groupby(["Condition", "dna_structure_class"], dropna=False).agg(
@@ -937,19 +1061,14 @@ with c9:
         barmode="group",
         title="DNA Structure Class by Condition",
         color_discrete_sequence=px.colors.qualitative.Safe,
-        template="plotly_dark"
+        template=plot_template
     )
-    fig10.update_layout(
-        height=420,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(255,255,255,0.02)",
-        font=dict(color="white")
-    )
+    fig10.update_layout(height=420, paper_bgcolor=plot_bg, font=dict(color=font_color))
     st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
     st.plotly_chart(fig10, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> DNA structure proxy classes translate geometric and distance-derived interaction features into easier structural categories.</div>',
+        '<div class="summary-glow"><b>Summary:</b> DNA structure proxy classes convert distance and geometric interaction features into easier structural categories for interpretation.</div>',
         unsafe_allow_html=True
     )
 
@@ -966,19 +1085,14 @@ with c10:
         title="DNA Structure Proxy Space",
         opacity=0.76,
         color_discrete_sequence=["#38bdf8", "#a855f7", "#fb7185"],
-        template="plotly_dark"
+        template=plot_template
     )
-    fig11.update_layout(
-        height=420,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(255,255,255,0.02)",
-        font=dict(color="white")
-    )
+    fig11.update_layout(height=420, paper_bgcolor=plot_bg, font=dict(color=font_color))
     st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
     st.plotly_chart(fig11, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> This structural map shows how interaction organization may shift under treatment when extension ratio and contact decay are viewed together.</div>',
+        '<div class="summary-glow"><b>Summary:</b> This structural map shows how chromatin organization may shift under treatment when extension ratio and contact decay are viewed together.</div>',
         unsafe_allow_html=True
     )
 
@@ -1012,7 +1126,7 @@ st.download_button(
 st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown("""
-<div style="text-align:center; color:#cbd5e1; font-size:0.9rem; padding-top:0.6rem; padding-bottom:0.2rem;">
-MOLM-1 Neon Dashboard · Distance-based chromatin interaction analysis · Visual, interactive, beginner-friendly
+<div style="text-align:center; color:#94a3b8; font-size:0.9rem; padding-top:0.6rem; padding-bottom:0.2rem;">
+MOLM-1 Dashboard · Distance-based chromatin interaction analysis · Vibrant UI · Beginner-friendly
 </div>
 """, unsafe_allow_html=True)
