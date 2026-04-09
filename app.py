@@ -15,36 +15,44 @@ import streamlit as st
 # =========================================================
 @st.cache_data(show_spinner=False)
 def load_interaction_file(file_bytes, name):
-    ext = os.path.splitext(name)[1].lower()
+    ext = os.path.splitext(name)[1].lower().strip()
 
-    if ext == ".zip":
+    if ext == ".csv":
+        df = pd.read_csv(io.BytesIO(file_bytes))
+
+    elif ext == ".xlsx":
+        df = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
+
+    elif ext == ".xls":
+        df = pd.read_excel(io.BytesIO(file_bytes))
+
+    elif ext == ".zip":
         with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
             valid_files = [
                 f for f in z.namelist()
-                if f.lower().endswith((".csv", ".xlsx", ".xls")) and not f.endswith("/")
+                if not f.endswith("/") and f.lower().endswith((".csv", ".xlsx", ".xls"))
             ]
+
             if not valid_files:
                 raise ValueError("ZIP file does not contain any CSV, XLSX, or XLS file.")
 
             target_file = valid_files[0]
+            inner_ext = os.path.splitext(target_file)[1].lower()
+
             with z.open(target_file) as f:
                 inner_bytes = f.read()
-                inner_ext = os.path.splitext(target_file)[1].lower()
 
-                if inner_ext == ".csv":
-                    df = pd.read_csv(io.BytesIO(inner_bytes))
-                elif inner_ext in [".xlsx", ".xls"]:
-                    df = pd.read_excel(io.BytesIO(inner_bytes))
-                else:
-                    raise ValueError("Unsupported file inside ZIP.")
+            if inner_ext == ".csv":
+                df = pd.read_csv(io.BytesIO(inner_bytes))
+            elif inner_ext == ".xlsx":
+                df = pd.read_excel(io.BytesIO(inner_bytes), engine="openpyxl")
+            elif inner_ext == ".xls":
+                df = pd.read_excel(io.BytesIO(inner_bytes))
+            else:
+                raise ValueError("Unsupported file inside ZIP.")
+
     else:
-        bio = io.BytesIO(file_bytes)
-        if ext == ".csv":
-            df = pd.read_csv(bio)
-        elif ext in [".xlsx", ".xls"]:
-            df = pd.read_excel(bio)
-        else:
-            raise ValueError("Unsupported format. Please upload CSV, XLSX, XLS, or ZIP.")
+        raise ValueError("Unsupported format. Please upload CSV, XLSX, XLS, or ZIP.")
 
     df = df.loc[:, ~df.columns.astype(str).str.contains("^Unnamed")]
     if "" in df.columns:
@@ -321,9 +329,7 @@ if st.session_state.theme_mode == "Dark":
 
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-    }
+    html, body, [class*="css"] {font-family: 'Inter', sans-serif;}
 
     .stApp {
         background:
@@ -341,13 +347,11 @@ if st.session_state.theme_mode == "Dark":
     }
 
     .hero {
-        background:
-            linear-gradient(135deg, rgba(124,58,237,0.45), rgba(59,130,246,0.28), rgba(236,72,153,0.30)),
-            rgba(255,255,255,0.06);
+        background: linear-gradient(135deg, rgba(124,58,237,0.45), rgba(59,130,246,0.28), rgba(236,72,153,0.30)), rgba(255,255,255,0.06);
         border: 1px solid rgba(255,255,255,0.14);
         box-shadow: 0 0 35px rgba(139,92,246,0.18);
         border-radius: 28px;
-        padding: 1.5rem 1.5rem;
+        padding: 1.5rem;
         margin-bottom: 1rem;
     }
 
@@ -373,7 +377,7 @@ if st.session_state.theme_mode == "Dark":
         border: 1px solid rgba(255,255,255,0.12);
         box-shadow: 0 8px 32px rgba(0,0,0,0.25);
         border-radius: 24px;
-        padding: 1.2rem 1.2rem;
+        padding: 1.2rem;
         margin-bottom: 1rem;
     }
 
@@ -390,7 +394,7 @@ if st.session_state.theme_mode == "Dark":
         border: 1px solid rgba(255,255,255,0.10);
         border-left: 5px solid #22d3ee;
         border-radius: 18px;
-        padding: 1rem 1rem;
+        padding: 1rem;
         color: #e2e8f0;
         margin-bottom: 1rem;
     }
@@ -415,22 +419,9 @@ if st.session_state.theme_mode == "Dark":
         margin-bottom: 0.8rem;
     }
 
-    .metric-emoji {
-        font-size: 1.5rem;
-        margin-bottom: 0.3rem;
-    }
-
-    .metric-label {
-        font-size: 0.92rem;
-        color: #cbd5e1;
-        margin-bottom: 0.15rem;
-    }
-
-    .metric-value {
-        font-size: 1.55rem;
-        font-weight: 900;
-        color: #ffffff;
-    }
+    .metric-emoji {font-size: 1.5rem; margin-bottom: 0.3rem;}
+    .metric-label {font-size: 0.92rem; color: #cbd5e1; margin-bottom: 0.15rem;}
+    .metric-value {font-size: 1.55rem; font-weight: 900; color: #ffffff;}
 
     .algorithm-step {
         background: linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.05));
@@ -475,9 +466,7 @@ if st.session_state.theme_mode == "Dark":
         border-right: 1px solid rgba(255,255,255,0.06);
     }
 
-    [data-testid="stSidebar"] * {
-        color: #e5e7eb !important;
-    }
+    [data-testid="stSidebar"] * {color: #e5e7eb !important;}
 
     div[data-testid="stButton"] > button {
         border-radius: 999px;
@@ -500,9 +489,7 @@ else:
 
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-    }
+    html, body, [class*="css"] {font-family: 'Inter', sans-serif;}
 
     .stApp {
         background:
@@ -524,7 +511,7 @@ else:
         border: 1px solid rgba(255,255,255,0.55);
         box-shadow: 0 14px 34px rgba(99,102,241,0.12);
         border-radius: 28px;
-        padding: 1.5rem 1.5rem;
+        padding: 1.5rem;
         margin-bottom: 1rem;
     }
 
@@ -549,7 +536,7 @@ else:
         border: 1px solid rgba(148,163,184,0.16);
         box-shadow: 0 8px 28px rgba(15,23,42,0.08);
         border-radius: 24px;
-        padding: 1.2rem 1.2rem;
+        padding: 1.2rem;
         margin-bottom: 1rem;
     }
 
@@ -566,7 +553,7 @@ else:
         border: 1px solid rgba(148,163,184,0.16);
         border-left: 5px solid #3b82f6;
         border-radius: 18px;
-        padding: 1rem 1rem;
+        padding: 1rem;
         color: #334155;
         margin-bottom: 1rem;
     }
@@ -591,22 +578,9 @@ else:
         margin-bottom: 0.8rem;
     }
 
-    .metric-emoji {
-        font-size: 1.5rem;
-        margin-bottom: 0.3rem;
-    }
-
-    .metric-label {
-        font-size: 0.92rem;
-        color: #475569;
-        margin-bottom: 0.15rem;
-    }
-
-    .metric-value {
-        font-size: 1.55rem;
-        font-weight: 900;
-        color: #0f172a;
-    }
+    .metric-emoji {font-size: 1.5rem; margin-bottom: 0.3rem;}
+    .metric-label {font-size: 0.92rem; color: #475569; margin-bottom: 0.15rem;}
+    .metric-value {font-size: 1.55rem; font-weight: 900; color: #0f172a;}
 
     .algorithm-step {
         background: linear-gradient(135deg, #ffffff, #faf5ff);
@@ -753,8 +727,8 @@ st.markdown("""
 <div class="main-card">
     <div class="section-title">What this dashboard shows</div>
     <div class="glow-note">
-    This dashboard is built to make the project easy to understand. It focuses on how genomic distance relates to interaction strength,
-    how those patterns change after drug treatment, and how strand, shape, and DNA structure-related features vary across conditions.
+    This dashboard makes the project easier to understand by connecting genomic distance with interaction strength,
+    drug treatment effects, strand behavior, DNA shape patterns, and structure-related trends.
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -785,13 +759,9 @@ plot_template = "plotly_dark" if st.session_state.theme_mode == "Dark" else "plo
 plot_bg = "rgba(0,0,0,0)" if st.session_state.theme_mode == "Dark" else "rgba(255,255,255,0)"
 font_color = "white" if st.session_state.theme_mode == "Dark" else "#0f172a"
 
-# DISTANCE ANALYSIS
 st.markdown('<div class="main-card"><div class="section-title">Distance-Dependent Interaction Analysis</div><div class="mini-tag">Core abstract analysis</div>', unsafe_allow_html=True)
 
-scatter_df = safe_sample(
-    fdf.dropna(subset=["log_distance", "interaction_strength_proxy"]),
-    max_points
-)
+scatter_df = safe_sample(fdf.dropna(subset=["log_distance", "interaction_strength_proxy"]), max_points)
 
 fig1 = px.scatter(
     scatter_df,
@@ -830,7 +800,7 @@ with c1:
     st.plotly_chart(fig2, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> This distribution shows whether a treatment condition contains more short-distance contacts or more long-distance contacts.</div>',
+        '<div class="summary-glow"><b>Summary:</b> This distribution shows whether a treatment condition contains more short-distance or long-distance contacts.</div>',
         unsafe_allow_html=True
     )
 
@@ -849,7 +819,7 @@ with c2:
     st.plotly_chart(fig3, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> This chart compares the spread of interaction strengths across Normal, Carboplatin, and Gemcitabine conditions.</div>',
+        '<div class="summary-glow"><b>Summary:</b> This chart compares interaction strength across Normal, Carboplatin, and Gemcitabine conditions.</div>',
         unsafe_allow_html=True
     )
 
@@ -872,13 +842,12 @@ if len(heat_df) > 0:
     st.plotly_chart(fig_heat, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> This heatmap makes it easier to compare average interaction strength across clear genomic distance ranges.</div>',
+        '<div class="summary-glow"><b>Summary:</b> This heatmap compares average interaction strength across genomic distance ranges.</div>',
         unsafe_allow_html=True
     )
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# SHORT/LONG
 st.markdown('<div class="main-card"><div class="section-title">Short-Range vs Long-Range Patterns</div><div class="mini-tag">Distance grouping by treatment</div>', unsafe_allow_html=True)
 
 range_stats = fdf.groupby(["Condition", "range_group"], dropna=False).agg(
@@ -904,7 +873,7 @@ with c3:
     st.plotly_chart(fig4, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> This chart shows whether treatment changes the balance between local and distant chromatin interactions.</div>',
+        '<div class="summary-glow"><b>Summary:</b> This chart shows whether treatment changes the balance between nearby and distant chromatin interactions.</div>',
         unsafe_allow_html=True
     )
 
@@ -930,7 +899,6 @@ with c4:
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# STRAND
 st.markdown('<div class="main-card"><div class="section-title">Strand Analysis Based on Drug and Distance</div><div class="mini-tag">Drug-linked strand patterns</div>', unsafe_allow_html=True)
 
 strand_view = fdf.groupby(["Condition", "strand_group"], dropna=False).agg(
@@ -957,7 +925,7 @@ with c5:
     st.plotly_chart(fig6, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> This chart shows how strand distribution changes across the drug conditions.</div>',
+        '<div class="summary-glow"><b>Summary:</b> This chart shows how strand distribution changes across drug conditions.</div>',
         unsafe_allow_html=True
     )
 
@@ -982,13 +950,12 @@ with c6:
     st.plotly_chart(fig7, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        f'<div class="summary-glow"><b>Summary:</b> {interaction_summary_text(strand_scatter)}. This view combines strand, drug condition, genomic distance, and interaction strength in one chart.</div>',
+        f'<div class="summary-glow"><b>Summary:</b> {interaction_summary_text(strand_scatter)}. This view combines strand, drug condition, distance, and interaction strength in one chart.</div>',
         unsafe_allow_html=True
     )
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# SHAPE
 st.markdown('<div class="main-card"><div class="section-title">DNA Shape Visualizations</div><div class="mini-tag">Distance and geometry-based shape analysis</div>', unsafe_allow_html=True)
 
 shape_view = fdf.groupby(["Condition", "shape_bucket"], dropna=False).agg(
@@ -1015,7 +982,7 @@ with c7:
     st.plotly_chart(fig8, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> Shape buckets group interactions into compact loops, local arcs, extended loops, and broader contact patterns.</div>',
+        '<div class="summary-glow"><b>Summary:</b> Shape buckets group interactions into compact loops, local arcs, extended loops, and broad contact patterns.</div>',
         unsafe_allow_html=True
     )
 
@@ -1046,7 +1013,6 @@ with c8:
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# DNA STRUCTURE
 st.markdown('<div class="main-card"><div class="section-title">DNA Structure Proxy Analysis</div><div class="mini-tag">Structure-related interaction organization</div>', unsafe_allow_html=True)
 
 dna_view = fdf.groupby(["Condition", "dna_structure_class"], dropna=False).agg(
@@ -1073,7 +1039,7 @@ with c9:
     st.plotly_chart(fig10, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> DNA structure proxy classes turn distance and geometry features into simple structural categories for interpretation.</div>',
+        '<div class="summary-glow"><b>Summary:</b> DNA structure proxy classes convert distance and geometry features into simple structural categories.</div>',
         unsafe_allow_html=True
     )
 
@@ -1097,13 +1063,12 @@ with c10:
     st.plotly_chart(fig11, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="summary-glow"><b>Summary:</b> This plot shows how structural behavior may shift across treatments when extension ratio and contact decay are viewed together.</div>',
+        '<div class="summary-glow"><b>Summary:</b> This plot shows how structure-related interaction behavior may shift across treatments.</div>',
         unsafe_allow_html=True
     )
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# TABLE
 st.markdown('<div class="main-card"><div class="section-title">Processed Interaction Table</div><div class="mini-tag">Clean output for review and download</div>', unsafe_allow_html=True)
 
 useful_cols = [
