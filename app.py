@@ -1,145 +1,17 @@
+# =========================================================
+# IMPORT STATEMENTS
+# =========================================================
 import os
 import io
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
-st.set_page_config(
-    page_title="MOLM-1 Chromatin Dashboard",
-    page_icon="🧬",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 # =========================================================
-# PAGE STYLE
-# =========================================================
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
-
-html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
-}
-
-.stApp {
-    background: linear-gradient(180deg, #f8f9ff 0%, #fff8fc 35%, #f7fbff 100%);
-}
-
-.block-container {
-    max-width: 1450px;
-    padding-top: 1rem;
-    padding-bottom: 2rem;
-}
-
-.hero {
-    background: linear-gradient(135deg, rgba(124,58,237,0.14), rgba(37,99,235,0.10), rgba(236,72,153,0.10));
-    border: 1px solid rgba(124,58,237,0.12);
-    border-radius: 24px;
-    padding: 1.3rem 1.4rem;
-    margin-bottom: 1rem;
-    box-shadow: 0 10px 30px rgba(15,23,42,0.06);
-}
-
-.hero-title {
-    font-size: 2.2rem;
-    font-weight: 800;
-    color: #1e293b;
-}
-
-.hero-sub {
-    font-size: 1rem;
-    color: #64748b;
-    margin-top: 0.35rem;
-}
-
-.note {
-    background: #f5f3ff;
-    border-left: 5px solid #7c3aed;
-    padding: 0.95rem 1rem;
-    border-radius: 14px;
-    margin: 0.8rem 0 1rem 0;
-    color: #334155;
-}
-
-.info-soft {
-    background: linear-gradient(135deg, #eff6ff, #fdf2f8);
-    border-left: 5px solid #2563eb;
-    padding: 0.95rem 1rem;
-    border-radius: 14px;
-    margin: 0.8rem 0 1rem 0;
-    color: #334155;
-}
-
-.success-soft {
-    background: linear-gradient(135deg, #ecfdf5, #f0fdf4);
-    border-left: 5px solid #16a34a;
-    padding: 0.95rem 1rem;
-    border-radius: 14px;
-    margin: 0.8rem 0 1rem 0;
-    color: #14532d;
-}
-
-.warn-soft {
-    background: linear-gradient(135deg, #fff7ed, #fef2f2);
-    border-left: 5px solid #ea580c;
-    padding: 0.95rem 1rem;
-    border-radius: 14px;
-    margin: 0.8rem 0 1rem 0;
-    color: #7c2d12;
-}
-
-.card {
-    background: #ffffff;
-    border: 1px solid rgba(148,163,184,0.18);
-    border-radius: 18px;
-    padding: 1rem;
-    box-shadow: 0 6px 20px rgba(15,23,42,0.05);
-}
-
-.section-title {
-    font-size: 1.25rem;
-    font-weight: 800;
-    color: #1e293b;
-    margin-top: 0.4rem;
-    margin-bottom: 0.65rem;
-}
-
-.algorithm-step {
-    background: linear-gradient(135deg, #ffffff, #faf5ff);
-    border: 1px solid rgba(124,58,237,0.15);
-    border-left: 5px solid #7c3aed;
-    border-radius: 16px;
-    padding: 0.9rem 1rem;
-    margin-bottom: 0.75rem;
-    color: #334155;
-}
-
-.algorithm-step b {
-    color: #4c1d95;
-}
-
-[data-testid="stMetric"] {
-    background: #fff;
-    border: 1px solid rgba(148,163,184,0.12);
-    border-radius: 16px;
-    padding: 0.8rem;
-}
-
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
-}
-
-.small-text {
-    font-size: 0.95rem;
-    color: #475569;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# =========================================================
-# HELPERS
+# ALGORITHM KA CODE
 # =========================================================
 @st.cache_data(show_spinner=False)
 def load_interaction_file(file_bytes, name):
@@ -163,8 +35,7 @@ def load_interaction_file(file_bytes, name):
 def clean_chr(x):
     if pd.isna(x):
         return np.nan
-    x = str(x).strip().lower()
-    x = x.replace("chromosome", "").replace("chr", "").strip()
+    x = str(x).strip().lower().replace("chromosome", "").replace("chr", "").strip()
     return "chr" + x if x else np.nan
 
 
@@ -205,10 +76,9 @@ def distance_class(x):
         return "trans_or_unknown"
     if x <= 100000:
         return "short_range"
-    elif x <= 1000000:
+    if x <= 1000000:
         return "medium_range"
-    else:
-        return "long_range"
+    return "long_range"
 
 
 def shape_class(row):
@@ -218,14 +88,52 @@ def shape_class(row):
 
     if pd.isna(d):
         return "trans_shape"
-    elif d <= 100000 and pd.notna(w) and w <= 2000:
+    if d <= 100000 and pd.notna(w) and w <= 2000:
         return "compact_loop"
-    elif d <= 1000000 and pd.notna(s) and s <= 1000000:
+    if d <= 1000000 and pd.notna(s) and s <= 1000000:
         return "local_arc"
-    elif d > 1000000 and pd.notna(s) and s > 1000000:
+    if d > 1000000 and pd.notna(s) and s > 1000000:
         return "extended_loop"
-    else:
-        return "broad_contact"
+    return "broad_contact"
+
+
+def dna_structure_class(row):
+    d = row.get("genomic_distance_final", np.nan)
+    ext_ratio = row.get("shape_extension_ratio", np.nan)
+    compactness = row.get("shape_compactness", np.nan)
+
+    if pd.isna(d):
+        return "unknown_structure"
+    if d <= 100000 and pd.notna(compactness) and compactness < 0.08:
+        return "tight_fold"
+    if d <= 1000000 and pd.notna(ext_ratio) and ext_ratio <= 30:
+        return "arched_domain"
+    if d > 1000000:
+        return "open_domain"
+    return "mixed_structure"
+
+
+def interaction_summary_text(sub_df):
+    if len(sub_df) == 0:
+        return "No data available for this section."
+
+    mean_distance = sub_df["genomic_distance_final"].mean() if "genomic_distance_final" in sub_df.columns else np.nan
+    mean_strength = sub_df["interaction_strength_proxy"].mean() if "interaction_strength_proxy" in sub_df.columns else np.nan
+    cis_share = (sub_df["interaction_type"].eq("cis").mean() * 100) if "interaction_type" in sub_df.columns else np.nan
+    short_share = (sub_df["range_group"].eq("Short-Range").mean() * 100) if "range_group" in sub_df.columns else np.nan
+
+    parts = []
+    parts.append(f"Rows: {len(sub_df):,}")
+    if pd.notna(mean_distance):
+        parts.append(f"Mean distance: {mean_distance:,.0f} bp")
+    if pd.notna(mean_strength):
+        parts.append(f"Mean strength: {mean_strength:.2f}")
+    if pd.notna(cis_share):
+        parts.append(f"Cis share: {cis_share:.1f}%")
+    if pd.notna(short_share):
+        parts.append(f"Short-range share: {short_share:.1f}%")
+
+    return " | ".join(parts)
 
 
 def safe_sample(df, n):
@@ -243,7 +151,6 @@ def process_data(df):
         "MG1_SuppPairs", "MG2_SuppPairs", "MC1_SuppPairs", "MC2_SuppPairs",
         "MN1_SuppPairs", "MN2_SuppPairs", "Normal", "CarboplatinTreated", "GemcitabineTreated"
     ]
-
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -285,7 +192,6 @@ def process_data(df):
         df["genomic_distance_final"] = df["computed_distance"]
 
     df.loc[df["interaction_type"] == "trans", "genomic_distance_final"] = np.nan
-
     df["Condition"] = df.apply(get_condition, axis=1)
     df["distance_class"] = df["genomic_distance_final"].apply(distance_class)
 
@@ -298,9 +204,9 @@ def process_data(df):
     labels = ["0-100kb", "100kb-500kb", "500kb-1Mb", "1Mb-5Mb", "5Mb-10Mb", ">10Mb"]
     df["distance_bin"] = pd.cut(df["genomic_distance_final"], bins=bins, labels=labels)
 
-    for col in ["MG1_SuppPairs", "MG2_SuppPairs", "MC1_SuppPairs", "MC2_SuppPairs", "MN1_SuppPairs", "MN2_SuppPairs"]:
-        if col not in df.columns:
-            df[col] = 0
+    for c in ["MG1_SuppPairs", "MG2_SuppPairs", "MC1_SuppPairs", "MC2_SuppPairs", "MN1_SuppPairs", "MN2_SuppPairs"]:
+        if c not in df.columns:
+            df[c] = 0
 
     df["interaction_strength_proxy"] = np.select(
         [
@@ -328,529 +234,785 @@ def process_data(df):
     df["log_distance"] = np.log10(df["genomic_distance_final"].replace(0, np.nan))
     df["distance_mb"] = df["genomic_distance_final"] / 1_000_000
     df["range_group"] = np.where(df["genomic_distance_final"] < 1_000_000, "Short-Range", "Long-Range")
+    df["dna_structure_class"] = df.apply(dna_structure_class, axis=1)
 
-    strength_q1 = df["interaction_strength_proxy"].quantile(0.33)
-    strength_q2 = df["interaction_strength_proxy"].quantile(0.66)
+    q1 = df["interaction_strength_proxy"].quantile(0.33)
+    q2 = df["interaction_strength_proxy"].quantile(0.66)
     df["strength_level"] = pd.cut(
         df["interaction_strength_proxy"],
-        bins=[-np.inf, strength_q1, strength_q2, np.inf],
+        bins=[-np.inf, q1, q2, np.inf],
         labels=["Weak", "Moderate", "Strong"]
     )
 
     return df
 
 
-@st.cache_data(show_spinner=False)
-def summarize(df):
-    condition_summary = df.groupby("Condition", dropna=False).agg(
-        total_interactions=("Condition", "size"),
-        cis_interactions=("interaction_type", lambda x: (x == "cis").sum()),
-        mean_distance=("genomic_distance_final", "mean"),
-        mean_strength=("interaction_strength_proxy", "mean")
-    ).reset_index()
-
-    distance_summary = df.groupby(["Condition", "distance_bin"], dropna=False).agg(
-        interaction_count=("distance_bin", "size"),
-        mean_strength=("interaction_strength_proxy", "mean")
-    ).reset_index()
-
-    strand_summary = df.groupby(["Condition", "strand_group"], dropna=False).agg(
-        interaction_count=("strand_group", "size"),
-        mean_distance=("genomic_distance_final", "mean")
-    ).reset_index()
-
-    shape_summary = df.groupby(["Condition", "shape_bucket"], dropna=False).agg(
-        interaction_count=("shape_bucket", "size"),
-        mean_extension_ratio=("shape_extension_ratio", "mean"),
-        mean_decay=("shape_contact_decay", "mean")
-    ).reset_index()
-
-    return condition_summary, distance_summary, strand_summary, shape_summary
-
-
 # =========================================================
-# HEADER
+# MAIN CODE
 # =========================================================
+st.set_page_config(
+    page_title="MOLM-1 Neon Genome Dashboard",
+    page_icon="🧬",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+}
+
+.stApp {
+    background:
+        radial-gradient(circle at 10% 20%, rgba(99,102,241,0.22), transparent 28%),
+        radial-gradient(circle at 85% 15%, rgba(236,72,153,0.18), transparent 24%),
+        radial-gradient(circle at 80% 80%, rgba(34,211,238,0.14), transparent 26%),
+        linear-gradient(135deg, #0f172a 0%, #111827 25%, #131c3a 55%, #1e1b4b 100%);
+    color: #e2e8f0;
+}
+
+.block-container {
+    max-width: 1500px;
+    padding-top: 1rem;
+    padding-bottom: 2rem;
+}
+
+.main-card {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    border-radius: 24px;
+    padding: 1.2rem 1.2rem;
+    margin-bottom: 1rem;
+}
+
+.hero {
+    background:
+        linear-gradient(135deg, rgba(124,58,237,0.45), rgba(59,130,246,0.28), rgba(236,72,153,0.30)),
+        rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.14);
+    box-shadow: 0 0 35px rgba(139,92,246,0.18);
+    border-radius: 28px;
+    padding: 1.6rem 1.6rem;
+    margin-bottom: 1rem;
+}
+
+.hero-badge {
+    display: inline-block;
+    padding: 0.32rem 0.75rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #22d3ee, #8b5cf6, #f472b6);
+    color: white;
+    font-size: 0.78rem;
+    font-weight: 800;
+    margin-bottom: 0.8rem;
+    letter-spacing: 0.02em;
+}
+
+.hero-title {
+    font-size: 2.6rem;
+    font-weight: 900;
+    line-height: 1.05;
+    color: #ffffff;
+    margin-bottom: 0.35rem;
+}
+
+.hero-sub {
+    font-size: 1.02rem;
+    color: #dbeafe;
+    max-width: 960px;
+}
+
+.section-title {
+    font-size: 1.25rem;
+    font-weight: 900;
+    color: #ffffff;
+    margin-top: 0.35rem;
+    margin-bottom: 0.8rem;
+    letter-spacing: 0.01em;
+}
+
+.glow-note {
+    background: linear-gradient(135deg, rgba(59,130,246,0.22), rgba(236,72,153,0.18));
+    border: 1px solid rgba(255,255,255,0.10);
+    border-left: 5px solid #22d3ee;
+    border-radius: 18px;
+    padding: 1rem 1rem;
+    color: #e2e8f0;
+    margin-bottom: 1rem;
+    box-shadow: 0 0 22px rgba(34,211,238,0.10);
+}
+
+.summary-glow {
+    background: linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.06));
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 16px;
+    padding: 0.9rem 1rem;
+    color: #dbeafe;
+    margin-top: 0.45rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 0 18px rgba(168,85,247,0.08);
+}
+
+.metric-card {
+    background: linear-gradient(135deg, rgba(99,102,241,0.22), rgba(236,72,153,0.14));
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 22px;
+    padding: 1rem;
+    box-shadow: 0 0 24px rgba(99,102,241,0.15);
+    text-align: center;
+    margin-bottom: 0.8rem;
+}
+
+.metric-emoji {
+    font-size: 1.5rem;
+    margin-bottom: 0.3rem;
+}
+
+.metric-label {
+    font-size: 0.92rem;
+    color: #cbd5e1;
+    margin-bottom: 0.15rem;
+}
+
+.metric-value {
+    font-size: 1.55rem;
+    font-weight: 900;
+    color: #ffffff;
+}
+
+.algorithm-step {
+    background: linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.05));
+    border: 1px solid rgba(255,255,255,0.09);
+    border-left: 4px solid #f472b6;
+    border-radius: 16px;
+    padding: 0.9rem 1rem;
+    margin-bottom: 0.7rem;
+    color: #e2e8f0;
+}
+
+.algorithm-step b {
+    color: #ffffff;
+}
+
+.chart-wrap {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 22px;
+    padding: 0.9rem;
+    box-shadow: 0 6px 22px rgba(0,0,0,0.18);
+    margin-bottom: 1rem;
+}
+
+.mini-tag {
+    display: inline-block;
+    padding: 0.28rem 0.7rem;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.08);
+    color: #c4b5fd;
+    border: 1px solid rgba(255,255,255,0.08);
+    font-size: 0.78rem;
+    font-weight: 700;
+    margin-bottom: 0.65rem;
+}
+
+.dataframe-shell {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 22px;
+    padding: 0.9rem;
+    margin-top: 0.6rem;
+}
+
+[data-testid="stSidebar"] {
+    background:
+        linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(30,41,59,0.96) 100%);
+    border-right: 1px solid rgba(255,255,255,0.06);
+}
+
+[data-testid="stSidebar"] * {
+    color: #e5e7eb !important;
+}
+
+[data-testid="stMetric"] {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+h1, h2, h3, h4, h5, h6, p, label, div {
+    color: inherit;
+}
+
+.stSelectbox label, .stMultiSelect label, .stSlider label, .stFileUploader label {
+    color: #e5e7eb !important;
+    font-weight: 700 !important;
+}
+
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background: rgba(255,255,255,0.06);
+    border-radius: 14px;
+    color: #e2e8f0;
+    padding: 10px 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+}
+
+.stTabs [aria-selected="true"] {
+    background: linear-gradient(90deg, rgba(99,102,241,0.35), rgba(236,72,153,0.28));
+    color: white !important;
+}
+
+div[data-testid="stDataFrame"] {
+    border-radius: 16px;
+    overflow: hidden;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.markdown("""
 <div class="hero">
-    <div class="hero-title">🧬 MOLM-1 Chromatin Dashboard</div>
+    <div class="hero-badge">NEXT-GENOME UI · VIBRANT MODE</div>
+    <div class="hero-title">🧬 MOLM-1 Chromatin Intelligence Dashboard</div>
     <div class="hero-sub">
-        Computational Analysis of Distance-Dependent Chromatin Interactions in MOLM-1 Cells
+        A distance-driven, visually rich genome interaction dashboard for MOLM-1 cells that compares
+        Normal, Carboplatin, and Gemcitabine conditions with strand analysis, shape analysis, DNA structure proxy views,
+        and chart-wise summaries in a beginner-friendly flow.
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# =========================================================
-# SIDEBAR
-# =========================================================
 with st.sidebar:
-    st.header("Upload & Controls")
+    st.header("Dashboard Controls")
     uploaded = st.file_uploader("Upload CSV / XLSX / XLS", type=["csv", "xlsx", "xls"])
-    page = st.radio("Select page", ["Overview", "Detailed analysis"])
-    max_points = st.slider("Max scatter points", 500, 15000, 4000, 500)
+    max_points = st.slider("Scatter detail", 500, 12000, 3500, 500)
     show_raw = st.toggle("Show raw preview", False)
 
-# =========================================================
-# NO FILE
-# =========================================================
 if uploaded is None:
     st.markdown("""
-    <div class="info-soft">
-    Upload your project dataset to begin. This dashboard is designed for your MOLM-1 chromatin interaction
-    dataset and will compute genomic distance, interaction strength trends, treatment comparison,
-    strand analysis, and DNA shape-style proxy analysis.
+    <div class="main-card">
+        <div class="section-title">Start Here</div>
+        <div class="glow-note">
+        Upload your project dataset to activate the full dashboard. This version is intentionally designed
+        to look more premium, colorful, and user-friendly while still following the abstract:
+        genomic distance computation, distance-dependent interaction strength analysis, treatment comparison,
+        short-range vs long-range interactions, strand analysis, shape visualizations, and DNA structure analysis.
+        </div>
     </div>
     """, unsafe_allow_html=True)
     st.stop()
 
-# =========================================================
-# LOAD FILE
-# =========================================================
 try:
-    file_bytes = uploaded.getvalue()
-    raw_df = load_interaction_file(file_bytes, uploaded.name)
+    raw_df = load_interaction_file(uploaded.getvalue(), uploaded.name)
     df = process_data(raw_df)
-    condition_summary, distance_summary, strand_summary, shape_summary = summarize(df)
 except Exception as e:
     st.error(f"Loading failed: {e}")
     st.stop()
 
 if show_raw:
-    st.markdown('<div class="section-title">Raw Data Preview</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-card"><div class="section-title">Raw Data Preview</div></div>', unsafe_allow_html=True)
     st.dataframe(raw_df.head(50), use_container_width=True)
 
 conditions = sorted(df["Condition"].dropna().unique().tolist())
-selected_conditions = st.multiselect("Choose conditions", conditions, default=conditions)
-
+selected_conditions = st.multiselect("Choose conditions to display", conditions, default=conditions)
 fdf = df[df["Condition"].isin(selected_conditions)].copy()
-condition_summary = condition_summary[condition_summary["Condition"].isin(selected_conditions)]
-distance_summary = distance_summary[distance_summary["Condition"].isin(selected_conditions)]
-strand_summary = strand_summary[strand_summary["Condition"].isin(selected_conditions)]
-shape_summary = shape_summary[shape_summary["Condition"].isin(selected_conditions)]
 
 if len(fdf) == 0:
     st.warning("No data available after filtering.")
     st.stop()
 
-# =========================================================
-# METRICS
-# =========================================================
-m1, m2, m3, m4 = st.columns(4)
+# METRIC CARDS
+mean_distance = fdf["genomic_distance_final"].mean()
+mean_strength = fdf["interaction_strength_proxy"].mean()
+cis_count = (fdf["interaction_type"] == "cis").sum()
 
-with m1:
-    st.metric("Total interactions", f"{len(fdf):,}")
+mc1, mc2, mc3, mc4 = st.columns(4)
 
-with m2:
-    st.metric("Cis interactions", f"{(fdf['interaction_type'] == 'cis').sum():,}")
+with mc1:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-emoji">🧩</div>
+        <div class="metric-label">Total Interactions</div>
+        <div class="metric-value">{len(fdf):,}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-with m3:
-    mean_distance = fdf["genomic_distance_final"].mean()
-    st.metric("Mean distance", f"{mean_distance:,.0f} bp" if pd.notna(mean_distance) else "NA")
+with mc2:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-emoji">🧬</div>
+        <div class="metric-label">Cis Interactions</div>
+        <div class="metric-value">{cis_count:,}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-with m4:
-    mean_strength = fdf["interaction_strength_proxy"].mean()
-    st.metric("Mean strength", f"{mean_strength:.2f}" if pd.notna(mean_strength) else "NA")
+with mc3:
+    md_text = f"{mean_distance:,.0f} bp" if pd.notna(mean_distance) else "NA"
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-emoji">📏</div>
+        <div class="metric-label">Mean Distance</div>
+        <div class="metric-value">{md_text}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
+with mc4:
+    ms_text = f"{mean_strength:.2f}" if pd.notna(mean_strength) else "NA"
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-emoji">⚡</div>
+        <div class="metric-label">Mean Strength</div>
+        <div class="metric-value">{ms_text}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("""
+<div class="main-card">
+    <div class="section-title">Why this dashboard matters</div>
+    <div class="glow-note">
+    This tool turns raw chromatin interaction rows into an easy visual story. Every major analysis here is rooted in
+    genomic distance, because your abstract specifically focuses on the relationship between distance and interaction strength
+    in MOLM-1 cells under Normal, Carboplatin, and Gemcitabine treatment conditions.
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ALGORITHM
+st.markdown('<div class="main-card"><div class="section-title">Algorithm Flow</div>', unsafe_allow_html=True)
+algo_steps = [
+    "Load the uploaded chromatin interaction dataset.",
+    "Clean chromosome names, strand values, and numeric fields.",
+    "Detect cis and trans interactions using chromosome matching.",
+    "Compute genomic distance for cis interactions from feature and interactor coordinates.",
+    "Estimate interaction strength from treatment-linked support pair columns.",
+    "Build distance bins and classify short-range, medium-range, and long-range interactions.",
+    "Generate strand analysis by drug and distance.",
+    "Generate shape and DNA structure proxy features from anchor span, interactor width, compactness, and decay.",
+    "Display all results in a one-page, beginner-friendly, visually rich dashboard."
+]
+for i, step in enumerate(algo_steps, start=1):
+    st.markdown(
+        f'<div class="algorithm-step"><b>Step {i}:</b> {step}</div>',
+        unsafe_allow_html=True
+    )
+st.markdown('</div>', unsafe_allow_html=True)
+
+# SECTION 1
+st.markdown('<div class="main-card"><div class="section-title">Distance-Dependent Interaction Analysis</div><div class="mini-tag">Abstract core analysis</div>', unsafe_allow_html=True)
+
+scatter_df = safe_sample(
+    fdf.dropna(subset=["log_distance", "interaction_strength_proxy"]),
+    max_points
+)
+
+fig1 = px.scatter(
+    scatter_df,
+    x="log_distance",
+    y="interaction_strength_proxy",
+    color="Condition",
+    title="Log Genomic Distance vs Interaction Strength",
+    opacity=0.78,
+    color_discrete_sequence=["#38bdf8", "#a855f7", "#fb7185"],
+    template="plotly_dark"
+)
+fig1.update_layout(
+    height=470,
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(255,255,255,0.02)",
+    font=dict(color="white"),
+    legend_title_text="Condition"
+)
+st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+st.plotly_chart(fig1, use_container_width=True)
+st.markdown('</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="note"><b>Dashboard note:</b> This version is lighter, faster, colorful, beginner-friendly, and structured as a 2-page dashboard with analysis based on distance computation, treatment comparison, strand analysis, and DNA shape-style proxy features.</div>',
+    f'<div class="summary-glow"><b>Summary:</b> {interaction_summary_text(scatter_df)}. This view directly shows how interaction strength changes with genomic distance under each treatment condition.</div>',
     unsafe_allow_html=True
 )
 
-# =========================================================
-# PAGE 1
-# =========================================================
-if page == "Overview":
-    st.markdown('<div class="section-title">Project Overview</div>', unsafe_allow_html=True)
-    st.markdown("""
-    <div class="card small-text">
-    This dashboard follows the project abstract by studying how chromatin interaction strength changes
-    with genomic distance in MOLM-1 leukemia cells under Normal, Carboplatin, and Gemcitabine conditions.
-    It is built to be colorful, user-friendly, and easy for a beginner to understand.
-    </div>
-    """, unsafe_allow_html=True)
+c1, c2 = st.columns(2)
 
-    st.markdown('<div class="section-title">What this tool shows</div>', unsafe_allow_html=True)
-    st.markdown("""
-    <div class="success-soft">
-    1. Genomic distance computation between interacting regions.<br>
-    2. Distance-dependent interaction strength analysis.<br>
-    3. Drug-condition comparison across Normal, Carboplatin, and Gemcitabine.<br>
-    4. Short-range versus long-range interaction changes.<br>
-    5. Strand analysis based on condition and distance.<br>
-    6. DNA shape-style proxy analysis using anchor and interactor geometry.
-    </div>
-    """, unsafe_allow_html=True)
+with c1:
+    fig2 = px.histogram(
+        fdf.dropna(subset=["genomic_distance_final"]),
+        x="genomic_distance_final",
+        color="Condition",
+        nbins=45,
+        title="Distance Distribution Across Conditions",
+        color_discrete_sequence=["#60a5fa", "#c084fc", "#fb7185"],
+        template="plotly_dark"
+    )
+    fig2.update_layout(
+        height=420,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.02)",
+        font=dict(color="white")
+    )
+    st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+    st.plotly_chart(fig2, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="summary-glow"><b>Summary:</b> This distribution highlights whether certain treatment conditions are associated with more local contacts or more distant chromatin interactions.</div>',
+        unsafe_allow_html=True
+    )
 
-    st.markdown('<div class="section-title">Algorithm</div>', unsafe_allow_html=True)
+with c2:
+    fig3 = px.box(
+        fdf.dropna(subset=["interaction_strength_proxy"]),
+        x="Condition",
+        y="interaction_strength_proxy",
+        color="Condition",
+        title="Strength Distribution by Treatment",
+        color_discrete_sequence=["#22d3ee", "#8b5cf6", "#f472b6"],
+        template="plotly_dark"
+    )
+    fig3.update_layout(
+        height=420,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.02)",
+        font=dict(color="white"),
+        showlegend=False
+    )
+    st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+    st.plotly_chart(fig3, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="summary-glow"><b>Summary:</b> This chart compares the spread of interaction strengths under Normal, Carboplatin, and Gemcitabine conditions.</div>',
+        unsafe_allow_html=True
+    )
 
-    algo_steps = [
-        "Load the uploaded chromatin interaction dataset.",
-        "Clean chromosome labels, strand values, and numeric fields.",
-        "Identify cis and trans interactions using chromosome matching.",
-        "Compute genomic distance for cis interactions from genomic coordinates.",
-        "Use abs_distance when available, otherwise use computed distance.",
-        "Create distance bins and classify interactions as short, medium, or long range.",
-        "Estimate interaction strength based on treatment-linked support-pair columns.",
-        "Analyze strand distribution and DNA shape-style proxy features.",
-        "Visualize all results in a clear and informative dashboard."
-    ]
+heat_df = fdf.dropna(subset=["distance_bin", "interaction_strength_proxy"]).groupby(
+    ["Condition", "distance_bin"], dropna=False
+)["interaction_strength_proxy"].mean().reset_index()
 
-    for i, step in enumerate(algo_steps, start=1):
-        st.markdown(
-            f'<div class="algorithm-step"><b>Step {i}:</b> {step}</div>',
-            unsafe_allow_html=True
-        )
+if len(heat_df) > 0:
+    heat_pivot = heat_df.pivot(index="distance_bin", columns="Condition", values="interaction_strength_proxy")
+    fig_heat = px.imshow(
+        heat_pivot,
+        text_auto=True,
+        color_continuous_scale="Plasma",
+        aspect="auto",
+        title="Mean Strength Across Distance Bins",
+        template="plotly_dark"
+    )
+    fig_heat.update_layout(
+        height=430,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.02)",
+        font=dict(color="white")
+    )
+    st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+    st.plotly_chart(fig_heat, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="summary-glow"><b>Summary:</b> The heatmap makes distance-dependent strength differences easier to understand by grouping interactions into clear genomic distance ranges.</div>',
+        unsafe_allow_html=True
+    )
 
-    st.markdown('<div class="section-title">Quick Visual Overview</div>', unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
+st.markdown('</div>', unsafe_allow_html=True)
 
-    with col1:
-        fig_cond = px.bar(
-            condition_summary,
-            x="Condition",
-            y="total_interactions",
-            color="Condition",
-            title="Total Interactions by Condition",
-            color_discrete_sequence=px.colors.qualitative.Bold,
-            template="plotly_white"
-        )
-        fig_cond.update_layout(height=420)
-        st.plotly_chart(fig_cond, use_container_width=True)
+# SECTION 2
+st.markdown('<div class="main-card"><div class="section-title">Short-Range vs Long-Range Patterns</div><div class="mini-tag">Distance grouping by treatment</div>', unsafe_allow_html=True)
 
-    with col2:
-        range_df = fdf.groupby(["Condition", "range_group"], dropna=False).size().reset_index(name="count")
-        fig_range = px.bar(
-            range_df,
-            x="Condition",
-            y="count",
-            color="range_group",
-            barmode="group",
-            title="Short-Range vs Long-Range Interactions",
-            color_discrete_sequence=["#7c3aed", "#ec4899"],
-            template="plotly_white"
-        )
-        fig_range.update_layout(height=420)
-        st.plotly_chart(fig_range, use_container_width=True)
+range_stats = fdf.groupby(["Condition", "range_group"], dropna=False).agg(
+    interaction_count=("Condition", "size"),
+    mean_strength=("interaction_strength_proxy", "mean")
+).reset_index()
 
-    st.markdown('<div class="section-title">Beginner Explanation</div>', unsafe_allow_html=True)
-    st.markdown("""
-    <div class="info-soft">
-    <b>Genomic distance</b> means how far two DNA regions are from each other on the genome.<br><br>
-    <b>Interaction strength</b> means how strongly those regions are interacting.<br><br>
-    <b>Short-range interactions</b> are more local contacts, while <b>long-range interactions</b> reflect
-    larger structural contacts in the genome. Drug treatment can shift these patterns.
-    </div>
-    """, unsafe_allow_html=True)
+c3, c4 = st.columns(2)
 
-# =========================================================
-# PAGE 2
-# =========================================================
-else:
-    st.markdown('<div class="section-title">Detailed Analysis Dashboard</div>', unsafe_allow_html=True)
+with c3:
+    fig4 = px.bar(
+        range_stats,
+        x="Condition",
+        y="interaction_count",
+        color="range_group",
+        barmode="group",
+        title="Short-Range vs Long-Range Counts",
+        color_discrete_sequence=["#38bdf8", "#fb7185"],
+        template="plotly_dark"
+    )
+    fig4.update_layout(
+        height=420,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.02)",
+        font=dict(color="white")
+    )
+    st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+    st.plotly_chart(fig4, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="summary-glow"><b>Summary:</b> This chart reveals whether treatment shifts the interaction population toward shorter or longer genomic distances.</div>',
+        unsafe_allow_html=True
+    )
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "Distance & Strength",
-        "Drug Comparison",
-        "Short vs Long",
-        "Strand Analysis",
-        "DNA Shape & Table"
-    ])
+with c4:
+    fig5 = px.bar(
+        range_stats,
+        x="Condition",
+        y="mean_strength",
+        color="range_group",
+        barmode="group",
+        title="Strength in Short vs Long Range",
+        color_discrete_sequence=["#22d3ee", "#f59e0b"],
+        template="plotly_dark"
+    )
+    fig5.update_layout(
+        height=420,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.02)",
+        font=dict(color="white")
+    )
+    st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+    st.plotly_chart(fig5, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="summary-glow"><b>Summary:</b> This comparison helps show whether drug treatment changes not only the number of interactions, but also how strong short and long contacts are.</div>',
+        unsafe_allow_html=True
+    )
 
-    with tab1:
-        st.markdown("""
-        <div class="info-soft">
-        This section examines how interaction strength changes with genomic distance, which is the central
-        theme of the abstract.
-        </div>
-        """, unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
-        scatter_df = safe_sample(
-            fdf.dropna(subset=["log_distance", "interaction_strength_proxy"]),
-            max_points
-        )
+# SECTION 3
+st.markdown('<div class="main-card"><div class="section-title">Strand Analysis Based on Drug and Distance</div><div class="mini-tag">Requested strand analysis</div>', unsafe_allow_html=True)
 
-        fig1 = px.scatter(
-            scatter_df,
-            x="log_distance",
-            y="interaction_strength_proxy",
-            color="Condition",
-            title="Log Distance vs Interaction Strength",
-            opacity=0.70,
-            color_discrete_sequence=px.colors.qualitative.Bold,
-            template="plotly_white"
-        )
-        fig1.update_layout(height=500)
-        st.plotly_chart(fig1, use_container_width=True)
+strand_view = fdf.groupby(["Condition", "strand_group"], dropna=False).agg(
+    interaction_count=("Condition", "size"),
+    mean_distance=("genomic_distance_final", "mean"),
+    mean_strength=("interaction_strength_proxy", "mean")
+).reset_index()
 
-        c1, c2 = st.columns(2)
+c5, c6 = st.columns(2)
 
-        with c1:
-            fig2 = px.histogram(
-                fdf.dropna(subset=["genomic_distance_final"]),
-                x="genomic_distance_final",
-                color="Condition",
-                nbins=40,
-                title="Distribution of Genomic Distance",
-                color_discrete_sequence=px.colors.qualitative.Pastel,
-                template="plotly_white"
-            )
-            fig2.update_layout(height=430)
-            st.plotly_chart(fig2, use_container_width=True)
+with c5:
+    fig6 = px.bar(
+        strand_view,
+        x="Condition",
+        y="interaction_count",
+        color="strand_group",
+        barmode="group",
+        title="Strand Distribution by Drug",
+        color_discrete_sequence=px.colors.qualitative.Prism,
+        template="plotly_dark"
+    )
+    fig6.update_layout(
+        height=420,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.02)",
+        font=dict(color="white")
+    )
+    st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+    st.plotly_chart(fig6, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="summary-glow"><b>Summary:</b> This shows how strand groups are distributed across Normal, Carboplatin, and Gemcitabine conditions.</div>',
+        unsafe_allow_html=True
+    )
 
-        with c2:
-            fig3 = px.box(
-                fdf.dropna(subset=["interaction_strength_proxy"]),
-                x="Condition",
-                y="interaction_strength_proxy",
-                color="Condition",
-                title="Interaction Strength Distribution",
-                color_discrete_sequence=px.colors.qualitative.Set2,
-                template="plotly_white"
-            )
-            fig3.update_layout(height=430)
-            st.plotly_chart(fig3, use_container_width=True)
+with c6:
+    strand_scatter = safe_sample(
+        fdf.dropna(subset=["genomic_distance_final", "interaction_strength_proxy"]),
+        max_points
+    )
+    fig7 = px.scatter(
+        strand_scatter,
+        x="genomic_distance_final",
+        y="interaction_strength_proxy",
+        color="strand_group",
+        symbol="Condition",
+        title="Distance vs Strength by Strand and Drug",
+        opacity=0.74,
+        color_discrete_sequence=px.colors.qualitative.Bold,
+        template="plotly_dark"
+    )
+    fig7.update_layout(
+        height=420,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.02)",
+        font=dict(color="white")
+    )
+    st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+    st.plotly_chart(fig7, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="summary-glow"><b>Summary:</b> {interaction_summary_text(strand_scatter)}. This chart combines drug, strand, distance, and interaction strength in a single visual.</div>',
+        unsafe_allow_html=True
+    )
 
-        heat_df = fdf.dropna(subset=["distance_bin", "interaction_strength_proxy"]).groupby(
-            ["Condition", "distance_bin"], dropna=False
-        )["interaction_strength_proxy"].mean().reset_index()
+st.markdown('</div>', unsafe_allow_html=True)
 
-        if len(heat_df) > 0:
-            heat_pivot = heat_df.pivot(index="distance_bin", columns="Condition", values="interaction_strength_proxy")
-            fig_heat = px.imshow(
-                heat_pivot,
-                text_auto=True,
-                color_continuous_scale="RdPu",
-                aspect="auto",
-                title="Mean Interaction Strength Across Distance Bins",
-                template="plotly_white"
-            )
-            fig_heat.update_layout(height=460)
-            st.plotly_chart(fig_heat, use_container_width=True)
+# SECTION 4
+st.markdown('<div class="main-card"><div class="section-title">DNA Shape Visualizations</div><div class="mini-tag">Shape features from distance and geometry</div>', unsafe_allow_html=True)
 
-    with tab2:
-        st.markdown("""
-        <div class="warn-soft">
-        This comparison highlights how Normal, Carboplatin, and Gemcitabine conditions differ in chromatin
-        interaction behavior.
-        </div>
-        """, unsafe_allow_html=True)
+shape_view = fdf.groupby(["Condition", "shape_bucket"], dropna=False).agg(
+    interaction_count=("Condition", "size"),
+    mean_extension_ratio=("shape_extension_ratio", "mean"),
+    mean_decay=("shape_contact_decay", "mean")
+).reset_index()
 
-        drug_stats = fdf.groupby("Condition", dropna=False).agg(
-            total_interactions=("Condition", "size"),
-            mean_strength=("interaction_strength_proxy", "mean"),
-            mean_distance_bp=("genomic_distance_final", "mean"),
-            cis_interactions=("interaction_type", lambda x: (x == "cis").sum())
-        ).reset_index()
+c7, c8 = st.columns(2)
 
-        c1, c2 = st.columns(2)
+with c7:
+    fig8 = px.bar(
+        shape_view,
+        x="Condition",
+        y="interaction_count",
+        color="shape_bucket",
+        barmode="group",
+        title="Shape Bucket by Condition",
+        color_discrete_sequence=px.colors.qualitative.G10,
+        template="plotly_dark"
+    )
+    fig8.update_layout(
+        height=420,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.02)",
+        font=dict(color="white")
+    )
+    st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+    st.plotly_chart(fig8, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="summary-glow"><b>Summary:</b> Shape buckets classify contacts into compact loops, local arcs, extended loops, and broad contacts using genomic distance and width-based rules.</div>',
+        unsafe_allow_html=True
+    )
 
-        with c1:
-            fig4 = px.bar(
-                drug_stats,
-                x="Condition",
-                y="mean_strength",
-                color="Condition",
-                title="Mean Interaction Strength by Condition",
-                color_discrete_sequence=px.colors.qualitative.Vivid,
-                template="plotly_white"
-            )
-            fig4.update_layout(height=430)
-            st.plotly_chart(fig4, use_container_width=True)
+with c8:
+    shape_scatter = safe_sample(
+        fdf.dropna(subset=["anchor_span", "interaction_strength_proxy"]),
+        max_points
+    )
+    fig9 = px.scatter(
+        shape_scatter,
+        x="anchor_span",
+        y="interaction_strength_proxy",
+        color="Condition",
+        size="interactor_width",
+        title="Anchor Span vs Interaction Strength",
+        opacity=0.76,
+        color_discrete_sequence=["#22d3ee", "#8b5cf6", "#fb7185"],
+        template="plotly_dark"
+    )
+    fig9.update_layout(
+        height=420,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.02)",
+        font=dict(color="white")
+    )
+    st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+    st.plotly_chart(fig9, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="summary-glow"><b>Summary:</b> {interaction_summary_text(shape_scatter)}. Bubble size reflects interactor width, helping visualize geometry-related contact patterns.</div>',
+        unsafe_allow_html=True
+    )
 
-        with c2:
-            fig5 = px.bar(
-                drug_stats,
-                x="Condition",
-                y="mean_distance_bp",
-                color="Condition",
-                title="Mean Genomic Distance by Condition",
-                color_discrete_sequence=px.colors.qualitative.Safe,
-                template="plotly_white"
-            )
-            fig5.update_layout(height=430)
-            st.plotly_chart(fig5, use_container_width=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
-        st.dataframe(drug_stats.round(3), use_container_width=True)
+# SECTION 5
+st.markdown('<div class="main-card"><div class="section-title">DNA Structure Proxy Analysis</div><div class="mini-tag">Tight folds, arches, and open domains</div>', unsafe_allow_html=True)
 
-    with tab3:
-        range_stats = fdf.groupby(["Condition", "range_group"], dropna=False).agg(
-            interaction_count=("Condition", "size"),
-            mean_strength=("interaction_strength_proxy", "mean")
-        ).reset_index()
+dna_view = fdf.groupby(["Condition", "dna_structure_class"], dropna=False).agg(
+    interaction_count=("Condition", "size"),
+    mean_distance=("genomic_distance_final", "mean"),
+    mean_strength=("interaction_strength_proxy", "mean")
+).reset_index()
 
-        c1, c2 = st.columns(2)
+c9, c10 = st.columns(2)
 
-        with c1:
-            fig6 = px.bar(
-                range_stats,
-                x="Condition",
-                y="interaction_count",
-                color="range_group",
-                barmode="group",
-                title="Short-Range vs Long-Range Counts",
-                color_discrete_sequence=["#8b5cf6", "#f43f5e"],
-                template="plotly_white"
-            )
-            fig6.update_layout(height=430)
-            st.plotly_chart(fig6, use_container_width=True)
+with c9:
+    fig10 = px.bar(
+        dna_view,
+        x="Condition",
+        y="interaction_count",
+        color="dna_structure_class",
+        barmode="group",
+        title="DNA Structure Class by Condition",
+        color_discrete_sequence=px.colors.qualitative.Safe,
+        template="plotly_dark"
+    )
+    fig10.update_layout(
+        height=420,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.02)",
+        font=dict(color="white")
+    )
+    st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+    st.plotly_chart(fig10, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="summary-glow"><b>Summary:</b> DNA structure proxy classes translate geometric and distance-derived interaction features into easier structural categories.</div>',
+        unsafe_allow_html=True
+    )
 
-        with c2:
-            fig7 = px.bar(
-                range_stats,
-                x="Condition",
-                y="mean_strength",
-                color="range_group",
-                barmode="group",
-                title="Mean Strength in Short vs Long Range",
-                color_discrete_sequence=["#06b6d4", "#f59e0b"],
-                template="plotly_white"
-            )
-            fig7.update_layout(height=430)
-            st.plotly_chart(fig7, use_container_width=True)
+with c10:
+    dna_scatter = safe_sample(
+        fdf.dropna(subset=["shape_extension_ratio", "shape_contact_decay"]),
+        max_points
+    )
+    fig11 = px.scatter(
+        dna_scatter,
+        x="shape_extension_ratio",
+        y="shape_contact_decay",
+        color="Condition",
+        title="DNA Structure Proxy Space",
+        opacity=0.76,
+        color_discrete_sequence=["#38bdf8", "#a855f7", "#fb7185"],
+        template="plotly_dark"
+    )
+    fig11.update_layout(
+        height=420,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.02)",
+        font=dict(color="white")
+    )
+    st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+    st.plotly_chart(fig11, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="summary-glow"><b>Summary:</b> This structural map shows how interaction organization may shift under treatment when extension ratio and contact decay are viewed together.</div>',
+        unsafe_allow_html=True
+    )
 
-        strength_stats = fdf.groupby(["Condition", "strength_level"], dropna=False).size().reset_index(name="count")
-        fig8 = px.bar(
-            strength_stats,
-            x="Condition",
-            y="count",
-            color="strength_level",
-            barmode="group",
-            title="Weak / Moderate / Strong Interactions",
-            color_discrete_sequence=["#fb7185", "#fbbf24", "#22c55e"],
-            template="plotly_white"
-        )
-        fig8.update_layout(height=430)
-        st.plotly_chart(fig8, use_container_width=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
-    with tab4:
-        st.markdown("""
-        <div class="info-soft">
-        This strand analysis uses the strand field in your dataset together with condition and genomic distance.
-        </div>
-        """, unsafe_allow_html=True)
+# TABLE
+st.markdown('<div class="main-card"><div class="section-title">Processed Interaction Table</div><div class="mini-tag">Clean output for review and download</div>', unsafe_allow_html=True)
 
-        strand_view = fdf.groupby(["Condition", "strand_group"], dropna=False).agg(
-            interaction_count=("Condition", "size"),
-            mean_distance=("genomic_distance_final", "mean"),
-            mean_strength=("interaction_strength_proxy", "mean")
-        ).reset_index()
+useful_cols = [
+    "Feature_Chr", "Feature_Start", "Interactor_Chr", "Interactor_Start", "Interactor_End",
+    "interaction_type", "Condition", "Strand", "strand_group", "genomic_distance_final",
+    "distance_mb", "distance_class", "distance_bin", "range_group",
+    "interaction_strength_proxy", "strength_level", "anchor_span", "interactor_width",
+    "shape_bucket", "dna_structure_class", "shape_compactness", "shape_extension_ratio",
+    "shape_contact_decay"
+]
+useful_cols = [c for c in useful_cols if c in fdf.columns]
 
-        c1, c2 = st.columns(2)
+st.markdown('<div class="dataframe-shell">', unsafe_allow_html=True)
+st.dataframe(fdf[useful_cols].head(300), use_container_width=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
-        with c1:
-            fig9 = px.bar(
-                strand_view,
-                x="Condition",
-                y="interaction_count",
-                color="strand_group",
-                barmode="group",
-                title="Strand Distribution by Condition",
-                color_discrete_sequence=px.colors.qualitative.Prism,
-                template="plotly_white"
-            )
-            fig9.update_layout(height=430)
-            st.plotly_chart(fig9, use_container_width=True)
+csv = fdf[useful_cols].to_csv(index=False).encode("utf-8")
+st.download_button(
+    "Download processed data as CSV",
+    data=csv,
+    file_name="molm1_processed_dashboard_data.csv",
+    mime="text/csv"
+)
 
-        with c2:
-            strand_scatter = safe_sample(
-                fdf.dropna(subset=["genomic_distance_final", "interaction_strength_proxy"]),
-                max_points
-            )
-            fig10 = px.scatter(
-                strand_scatter,
-                x="genomic_distance_final",
-                y="interaction_strength_proxy",
-                color="strand_group",
-                symbol="Condition",
-                title="Distance vs Strength by Strand and Condition",
-                opacity=0.70,
-                color_discrete_sequence=px.colors.qualitative.Dark24,
-                template="plotly_white"
-            )
-            fig10.update_layout(height=430)
-            st.plotly_chart(fig10, use_container_width=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
-        st.dataframe(strand_view.round(3), use_container_width=True)
-
-    with tab5:
-        st.markdown("""
-        <div class="success-soft">
-        DNA shape-style analysis here is shown through proxy features derived from anchor span,
-        interactor width, genomic distance, extension ratio, and contact decay.
-        </div>
-        """, unsafe_allow_html=True)
-
-        shape_view = fdf.groupby(["Condition", "shape_bucket"], dropna=False).agg(
-            interaction_count=("Condition", "size"),
-            mean_extension_ratio=("shape_extension_ratio", "mean"),
-            mean_decay=("shape_contact_decay", "mean")
-        ).reset_index()
-
-        c1, c2 = st.columns(2)
-
-        with c1:
-            fig11 = px.bar(
-                shape_view,
-                x="Condition",
-                y="interaction_count",
-                color="shape_bucket",
-                barmode="group",
-                title="DNA Shape Bucket by Condition",
-                color_discrete_sequence=px.colors.qualitative.G10,
-                template="plotly_white"
-            )
-            fig11.update_layout(height=430)
-            st.plotly_chart(fig11, use_container_width=True)
-
-        with c2:
-            shape_scatter = safe_sample(
-                fdf.dropna(subset=["anchor_span", "interaction_strength_proxy"]),
-                max_points
-            )
-            fig12 = px.scatter(
-                shape_scatter,
-                x="anchor_span",
-                y="interaction_strength_proxy",
-                color="Condition",
-                size="interactor_width",
-                title="Anchor Span vs Interaction Strength",
-                opacity=0.70,
-                color_discrete_sequence=px.colors.qualitative.Bold,
-                template="plotly_white"
-            )
-            fig12.update_layout(height=430)
-            st.plotly_chart(fig12, use_container_width=True)
-
-        st.dataframe(shape_view.round(3), use_container_width=True)
-
-        st.markdown('<div class="section-title">Processed Data Table</div>', unsafe_allow_html=True)
-
-        useful_cols = [
-            "Feature_Chr", "Feature_Start", "Interactor_Chr", "Interactor_Start", "Interactor_End",
-            "interaction_type", "Condition", "Strand", "strand_group", "genomic_distance_final",
-            "distance_mb", "distance_class", "distance_bin", "range_group",
-            "interaction_strength_proxy", "strength_level", "anchor_span", "interactor_width",
-            "shape_bucket", "shape_compactness", "shape_extension_ratio", "shape_contact_decay"
-        ]
-
-        useful_cols = [c for c in useful_cols if c in fdf.columns]
-
-        st.dataframe(fdf[useful_cols].head(300), use_container_width=True)
-
-        csv = fdf[useful_cols].to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "Download processed data as CSV",
-            data=csv,
-            file_name="molm1_processed_dashboard_data.csv",
-            mime="text/csv"
-        )
-
-# =========================================================
-# FOOTER
-# =========================================================
-st.markdown("---")
 st.markdown("""
-<div style="text-align:center; color:#64748b; font-size:0.9rem; padding-bottom:0.6rem;">
-MOLM-1 Dashboard · Computational Analysis of Distance-Dependent Chromatin Interactions
+<div style="text-align:center; color:#cbd5e1; font-size:0.9rem; padding-top:0.6rem; padding-bottom:0.2rem;">
+MOLM-1 Neon Dashboard · Distance-based chromatin interaction analysis · Visual, interactive, beginner-friendly
 </div>
 """, unsafe_allow_html=True)
